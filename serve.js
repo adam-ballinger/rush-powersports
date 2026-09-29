@@ -16,42 +16,46 @@ const REV = process.env.K_REVISION || 'local';
 const ogImage = fs.readFileSync(path.join(__dirname, 'og-rush.png'));
 
 const css = `
-:root{color-scheme:light;--bg:#fbfaf7;--fg:#1d1d1d;--dim:#858585;--line:#e4e2dc;--y:#a87600;--c:#0a8f9c;--m:#c8177a}
+:root{color-scheme:light;--bg:#fbfaf7;--fg:#1d1d1d;--dim:#858585;--line:#e4e2dc;--y:#a87600;--c:#0a8f9c;--m:#c8177a;--card:#fff;--s1:4px;--s2:8px;--s3:16px;--s4:24px}
 *{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%;text-size-adjust:100%}
 body{margin:0;overflow-wrap:anywhere;background:var(--bg);color:var(--fg);font:15px/1.6 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
-main{max-width:44rem;margin:0 auto;padding:1.5rem 1rem 5rem}
+main{max-width:44rem;margin:0 auto;padding:var(--s4) var(--s3) 80px}
 a{color:inherit;text-decoration:none}
 .y{color:var(--y)}.c{color:var(--c)}.m{color:var(--m)}.dim{color:var(--dim)}
 h1{margin:0;font-size:1.3rem}
-nav{display:flex;gap:1.4rem;margin:.6rem 0 1.2rem;border-bottom:1px solid var(--line)}
-nav a{padding:.3rem 0;color:var(--dim)}
+nav{display:flex;gap:var(--s4);margin:var(--s2) 0 var(--s3);border-bottom:1px solid var(--line)}
+nav a{padding:10px 0;color:var(--dim)}
 nav a.on{color:var(--fg);border-bottom:2px solid var(--c)}
 nav sup{color:var(--m);font-size:10px}
-h2{margin:0 0 1rem;font-size:15px;font-weight:normal;color:var(--c)}
-h3{margin:1.8rem 0 .4rem;font-size:15px;font-weight:normal;color:var(--dim)}
-.card{display:block;padding:.8rem 0;border-bottom:1px solid var(--line)}
+h3{margin:var(--s4) 0 var(--s2);font-size:15px;font-weight:normal;color:var(--dim)}
+.cards{display:grid;gap:var(--s2);margin-top:var(--s3)}
+.card{display:block;padding:var(--s3);background:var(--card);border:1px solid var(--line);border-radius:8px}
+.card.shop{border-left:4px solid var(--c)}
+.card .top{display:flex;justify-content:space-between;gap:var(--s2)}
+.card .top span{white-space:nowrap}
 ul{list-style:none;margin:0;padding:0}
-li{display:flex;align-items:baseline;gap:1ch;padding:.35rem 0;border-bottom:1px solid var(--line);transition:opacity .2s}
+li{display:flex;align-items:baseline;gap:1ch;padding:10px 0;border-bottom:1px solid var(--line);transition:opacity .2s}
 li>span{flex:1}
 .meta{color:var(--dim);font-size:12px;white-space:nowrap}
 .done>span{color:var(--dim);text-decoration:line-through}
-label{display:block;margin-top:.8rem;color:var(--dim)}
-input,textarea{display:block;width:100%;padding:.2em 0;background:none;color:var(--fg);font:inherit;font-size:16px;border:0;border-bottom:1px solid var(--line);caret-color:var(--c)}
+label{display:block;margin-top:var(--s3);color:var(--dim)}
+input,textarea{display:block;width:100%;padding:var(--s2) 0;background:none;color:var(--fg);font:inherit;font-size:16px;border:0;border-bottom:1px solid var(--line);caret-color:var(--c)}
 textarea{resize:vertical}
 input:focus,textarea:focus{outline:0;border-color:var(--c)}
-button,.btn{padding:.4em .9em;background:none;color:var(--c);font:inherit;font-size:15px;border:1px solid var(--c);border-radius:4px;cursor:pointer}
-li button{padding:0;border:0;white-space:nowrap}
-button.x{color:var(--dim)}
-.row{display:flex;gap:.6rem;margin-top:.8rem;flex-wrap:wrap}
+button,.btn{display:inline-block;padding:10px var(--s3);background:none;color:var(--c);font:inherit;font-size:15px;border:1px solid var(--c);border-radius:4px;cursor:pointer}
+li button{padding:10px;margin:-10px;border:0;white-space:nowrap}
+button.x{color:var(--dim);padding:10px 18px;margin:-10px -16px -10px -10px}
+.row{display:flex;gap:var(--s2);margin-top:var(--s3);flex-wrap:wrap}
 .pending{opacity:.5}
 li.gone{opacity:.25}
 body.busy button{cursor:progress}
-footer{margin-top:3rem;padding-top:1rem;border-top:1px solid var(--line);color:var(--dim);font-size:12px}
+footer{margin-top:48px;padding-top:var(--s3);border-top:1px solid var(--line);color:var(--dim);font-size:12px}
 footer b{color:var(--fg);font-weight:normal}
 #logo i{font-style:normal}
 .spin{font-style:normal;color:var(--c)}
 #logo .m{color:#ff3fb4}#logo .y{color:#f2b705}#logo .c{color:#12b5c4}
-#status{position:fixed;left:50%;bottom:1rem;transform:translateX(-50%);padding:.3em .9em;background:var(--bg);border:1px solid var(--line);border-radius:4px;font-size:13px;white-space:nowrap}
+#status{position:fixed;left:50%;bottom:var(--s3);transform:translateX(-50%);padding:var(--s1) var(--s3);background:var(--bg);border:1px solid var(--line);border-radius:4px;font-size:13px;white-space:nowrap}
 #status:empty{display:none}
 #status.ok{color:var(--c)}#status.err{color:var(--m)}`;
 
@@ -139,7 +143,7 @@ function browser() {
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => `&#${c.charCodeAt(0)};`);
 const logo = '<span id="logo"><i class="m">█</i><i class="y">█</i><i class="c">█</i></span>';
 
-// c: { k, q, t0, tab, path, id } built per request
+// c: { k, q, t0, tab, id } built per request
 const page = (c, title, body) => `<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>${esc(title)}</title>
 <meta property="og:title" content="Rush Powersports">
@@ -152,7 +156,6 @@ const page = (c, title, body) => `<!doctype html><meta charset="utf-8"><meta nam
 <h1>Rush Powersports</h1>
 <nav>${[['jobs', '/jobs', ''], ['ebay', '/ebay', ' <sup>soon</sup>'], ['tires', '/tires', ' <sup>soon</sup>']]
     .map(([t, href, sup]) => `<a href="${href}${c.q}"${c.tab === t ? ' class="on"' : ''}>${t === 'tires' ? 'tire shop' : t}${sup}</a>`).join('')}</nav>
-<h2>${esc(c.path)}</h2>
 ${body}
 <footer><div>${logo} <b>Resource Automation</b></div>
 <div>user ${esc(c.k.label)} · key …${c.k.key.slice(-4)}${c.id ? ` · job …${String(c.id).slice(-6)}` : ''}</div>
@@ -172,13 +175,14 @@ const name = (j) => j.shop ? 'Shop' : [j.machine, j.customer].filter(Boolean).jo
 const card = (j, q) => {
   const need = j.parts.filter((p) => p.state === 'need').length;
   const next = j.todo.find((t) => !t.done);
-  return `<a class="card" href="/job/${j._id}${q}"><b>${esc(name(j))}</b>
-<br>${need ? `<span class="m">${need} part${need > 1 ? 's' : ''} needed</span> · ` : ''}${next ? esc(next.text) : '<span class="dim">nothing left to do</span>'}</a>`;
+  const done = j.todo.filter((t) => t.done).length;
+  return `<a class="card${j.shop ? ' shop' : ''}" href="/job/${j._id}${q}"><div class="top"><b>${esc(j.machine || name(j))}</b>${j.todo.length ? `<span class="dim">${done}/${j.todo.length} ✓</span>` : ''}</div>
+${j.machine && j.customer ? `<div class="dim">${esc(j.customer)}</div>` : ''}<div>${need ? `<span class="m">${need} part${need > 1 ? 's' : ''} needed</span> · ` : ''}${next ? esc(next.text) : '<span class="dim">nothing left to do</span>'}</div></a>`;
 };
 
 const list = (c, open, done) => page(c, 'Rush Powersports', `<a class="btn" href="/new${c.q}">+ new job</a>
-${open.map((j) => card(j, c.q)).join('\n')}
-${done.length ? `<h3># recently done</h3>${done.map((j) => card(j, c.q)).join('\n')}` : ''}`);
+<div class="cards">${open.map((j) => card(j, c.q)).join('\n')}</div>
+${done.length ? `<h3># recently done</h3><div class="cards">${done.map((j) => card(j, c.q)).join('\n')}</div>` : ''}`);
 
 const soon = (c) => page(c, 'Coming soon', '<p class="dim"># coming soon</p>');
 
@@ -187,7 +191,8 @@ const fields = (j = {}) => j.shop ? '' : `<label>machine (year make model)<input
 <label>phone<input name="phone" type="tel" maxlength="2000" value="${esc(j.phone)}"></label>
 <label>quote<input name="quote" maxlength="2000" value="${esc(j.quote)}"></label>`;
 
-const newJob = (c) => page(c, 'New job', `<form method="post" action="/new${c.q}">${fields()}
+const newJob = (c) => page(c, 'New job', `<b>new job</b>
+<form method="post" action="/new${c.q}">${fields()}
 <label>what they want done (one per line)<textarea name="todo" rows="4" maxlength="2000" placeholder="won&#39;t start&#10;new tires"></textarea></label>
 <div class="row"><button>save</button></div></form>`);
 
@@ -253,13 +258,13 @@ async function serve(db) {
           jobs.find({ doneAt: null }).sort({ shop: -1, inAt: 1 }).toArray(),
           jobs.find({ doneAt: { $ne: null } }).sort({ doneAt: -1 }).limit(5).toArray(),
         ]);
-        return res.end(list({ ...c, path: '/jobs' }, open, done));
+        return res.end(list(c, open, done));
       }
-      if (route === 'ebay') return res.end(soon({ ...c, tab: 'ebay', path: '/ebay' }));
-      if (route === 'tires') return res.end(soon({ ...c, tab: 'tires', path: '/tires' }));
+      if (route === 'ebay') return res.end(soon({ ...c, tab: 'ebay' }));
+      if (route === 'tires') return res.end(soon({ ...c, tab: 'tires' }));
 
       if (route === 'new') {
-        if (!f) return res.end(newJob({ ...c, path: '/new' }));
+        if (!f) return res.end(newJob(c));
         const { insertedId } = await jobs.insertOne({ shop: false, ...set, todo: lines('todo').map((s) => line('todo', s)), parts: [], inAt: new Date(), doneAt: null, createdBy: k.label });
         return back(`/job/${insertedId}`);
       }
@@ -268,7 +273,7 @@ async function serve(db) {
       const _id = new ObjectId(id);
       if (!f) {
         const j = await jobs.findOne({ _id });
-        return j ? res.end(job({ ...c, path: `/job/${id}`, id }, j)) : res.writeHead(404).end();
+        return j ? res.end(job({ ...c, id }, j)) : res.writeHead(404).end();
       }
 
       // change only the one line or field, by id, so two people tapping at once don't overwrite each other
