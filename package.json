@@ -4,5 +4,8 @@
   "type": "commonjs",
   "dependencies": {
     "mongodb": "7.6.0"
+  },
+  "scripts": {
+    "start": "node serve.js"
   }
 }
