@@ -34,6 +34,8 @@ h3{margin:var(--s4) 0 var(--s2);font-size:15px;font-weight:normal;color:var(--di
 .card.shop{border-left:4px solid var(--c)}
 .card .top{display:flex;justify-content:space-between;gap:var(--s2)}
 .card .top span{white-space:nowrap}
+section.card{margin-top:var(--s3)}
+.card>form:first-child>h3:first-child{margin-top:0}
 ul{list-style:none;margin:0;padding:0}
 li{display:flex;align-items:baseline;gap:1ch;padding:10px 0;border-bottom:1px solid var(--line);transition:opacity .2s}
 li>span{flex:1}
@@ -165,6 +167,8 @@ ${body}
 
 const nextPart = (s) => PARTS[(PARTS.indexOf(s) + 1) % PARTS.length];
 const day = (d) => d.toLocaleDateString('en-CA', { timeZone: 'America/Chicago' });
+// calendar days between two dates in shop time: "today", "1 day", "6 days"
+const days = (from, to) => { const n = Math.round((Date.parse(day(to)) - Date.parse(day(from))) / 864e5); return n < 1 ? 'today' : n === 1 ? '1 day' : `${n} days`; };
 const ago = (d) => { const m = (Date.now() - d) / 60000; return m < 1 ? 'now' : m < 60 ? `${m | 0}m` : m < 1440 ? `${m / 60 | 0}h` : `${m / 1440 | 0}d`; };
 // hidden until the browser checks it fits beside the text (fit() in browser())
 const meta = (l) => l.changedBy ? `<small class="meta" hidden>${esc(l.changedBy)} · ${ago(l.changedAt)}</small>` : '';
@@ -176,7 +180,7 @@ const card = (j, q) => {
   const need = j.parts.filter((p) => p.state === 'need').length;
   const next = j.todo.find((t) => !t.done);
   const done = j.todo.filter((t) => t.done).length;
-  return `<a class="card${j.shop ? ' shop' : ''}" href="/job/${j._id}${q}"><div class="top"><b>${esc(j.machine || name(j))}</b>${j.todo.length ? `<span class="dim">${done}/${j.todo.length} ✓</span>` : ''}</div>
+  return `<a class="card${j.shop ? ' shop' : ''}" href="/job/${j._id}${q}"><div class="top"><b>${esc(j.machine || name(j))}</b>${j.todo.length ? `<span class="${done === j.todo.length ? 'c' : 'dim'}">${done}/${j.todo.length} ✓</span>` : ''}</div>
 ${j.machine && j.customer ? `<div class="dim">${esc(j.customer)}</div>` : ''}<div>${need ? `<span class="m">${need} part${need > 1 ? 's' : ''} needed</span> · ` : ''}${next ? esc(next.text) : '<span class="dim">nothing left to do</span>'}</div></a>`;
 };
 
@@ -200,16 +204,16 @@ const job = (c, j) => {
   const act = `method="post" action="/job/${j._id}${c.q}"`;
   // buttons send the state they are asking for, so a repeat or stale tap can't flip the wrong way
   return page(c, name(j), `<b>${esc(name(j))}</b>
-${j.shop ? '' : `<div class="dim">${j.phone ? `<a class="c" href="tel:${esc(j.phone)}">${esc(j.phone)}</a> · ` : ''}in ${day(j.inAt)}${j.quote ? ` · quoted ${esc(j.quote)}` : ''}${j.doneAt ? ` · <span class="y">done</span>` : ''}</div>`}
-<form ${act}>
+${j.shop ? '' : `<div class="dim">${j.phone ? `<a class="c" href="tel:${esc(j.phone)}">${esc(j.phone)}</a> · ` : ''}in ${day(j.inAt)} (${days(j.inAt, j.doneAt || new Date())})${j.quote ? ` · quoted ${esc(j.quote)}` : ''}${j.doneAt ? ` · <span class="y">done</span>` : ''}</div>`}
+<section class="card"><form ${act}>
 <h3># to do</h3><ul>${j.todo.map((t) => `<li class="${t.done ? 'done' : ''}"><button name="a" value="todo:${t.id}:${t.done ? 0 : 1}" data-next="${t.done ? '[ ]' : '[x]'}">${t.done ? '[x]' : '[ ]'}</button><span>${esc(t.text)}</span>${meta(t)}<button class="x" name="a" value="rmtodo:${t.id}">×</button>`).join('')}</ul>
 <h3># parts</h3><ul>${j.parts.map((p) => `<li><button name="a" value="part:${p.id}:${nextPart(p.state)}" class="${COLOR[p.state]}" data-next="[${nextPart(p.state)}]" data-cls="${COLOR[nextPart(p.state)]}">[${p.state}]</button><span>${esc(p.text)}</span>${meta(p)}<button class="x" name="a" value="rmpart:${p.id}">×</button>`).join('')}</ul>
 </form>
-<form ${act}><label>add<textarea name="text" rows="2" maxlength="2000" placeholder="type it, then tap + to do or + part&#10;one per line adds several"></textarea></label>
-<div class="row"><button name="a" value="add:todo">+ to do</button><button name="a" value="add:part">+ part</button></div></form>
-<form ${act}><h3># details</h3>${fields(j)}
+<form ${act}><h3># add</h3><textarea name="text" rows="2" maxlength="2000" aria-label="add" placeholder="type it, then tap + to do or + part&#10;one per line adds several"></textarea>
+<div class="row"><button name="a" value="add:todo">+ to do</button><button name="a" value="add:part">+ part</button></div></form></section>
+<section class="card"><form ${act}><h3># details</h3>${fields(j)}
 <label>notes<textarea name="notes" rows="4" maxlength="10000">${esc(j.notes)}</textarea></label>
-<div class="row"><button name="a" value="save">save</button>${j.shop ? '' : `<button name="a" value="done:${j.doneAt ? 0 : 1}">${j.doneAt ? 'reopen' : 'mark done'}</button>`}</div></form>`);
+<div class="row"><button name="a" value="save">save</button>${j.shop ? '' : `<button name="a" value="done:${j.doneAt ? 0 : 1}">${j.doneAt ? 'reopen' : 'mark done'}</button>`}</div></form></section>`);
 };
 
 async function serve(db) {
