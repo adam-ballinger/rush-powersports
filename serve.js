@@ -33,6 +33,7 @@ h3{margin:1.8rem 0 .4rem;font-size:15px;font-weight:normal;color:var(--dim)}
 ul{list-style:none;margin:0;padding:0}
 li{display:flex;align-items:baseline;gap:1ch;padding:.35rem 0;border-bottom:1px solid var(--line);transition:opacity .2s}
 li>span{flex:1}
+.meta{color:var(--dim);font-size:12px;white-space:nowrap}
 .done>span{color:var(--dim);text-decoration:line-through}
 label{display:block;margin-top:.8rem;color:var(--dim)}
 input,textarea{display:block;width:100%;padding:.2em 0;background:none;color:var(--fg);font:inherit;font-size:16px;border:0;border-bottom:1px solid var(--line);caret-color:var(--c)}
@@ -86,6 +87,16 @@ function browser() {
   addEventListener('offline', net);
   addEventListener('pageshow', () => { stop(); document.querySelectorAll('.spin').forEach((el) => el.remove()); net(); });
 
+  // show a row's "who · when" only when the row's text still fits on one line beside it
+  const fit = () => {
+    const metas = [...document.querySelectorAll('.meta')];
+    metas.forEach((m) => m.hidden = false);
+    metas.filter((m) => m.previousElementSibling.offsetHeight > parseFloat(getComputedStyle(m.previousElementSibling).lineHeight) * 1.5)
+      .forEach((m) => m.hidden = true);
+  };
+  let frame;
+  addEventListener('resize', () => { cancelAnimationFrame(frame); frame = requestAnimationFrame(fit); });
+
   document.addEventListener('click', (e) => {
     const a = e.target.closest('a[href^="/"]');
     if (a && !busy && !e.ctrlKey && !e.metaKey && !e.shiftKey) start((m) => a.append(' ', m));
@@ -100,6 +111,7 @@ function browser() {
     if (btn && btn.dataset.next) { btn.textContent = btn.dataset.next; btn.className = btn.dataset.cls || ''; }
     if (btn && btn.value.startsWith('rm')) row.classList.add('gone');
     if (btn) btn.classList.add('pending');
+    if (row && row.querySelector('.meta')) row.querySelector('.meta').hidden = true;
     const mark = start((m) => row ? row.querySelector('.x').before(m) : form.querySelector('button').parentNode.append(m));
     const t = performance.now();
     try {
@@ -109,6 +121,7 @@ function browser() {
       $('main').replaceWith(doc.querySelector('main'));
       document.title = doc.title;
       if (r.url !== location.href) history.replaceState(null, '', r.url);
+      fit();
       status(`✓ saved <span class="dim">${Math.round(performance.now() - t)}ms</span>`, 'ok');
     } catch (err) {
       if (btn) [btn.innerHTML, btn.className] = undo;
@@ -120,6 +133,7 @@ function browser() {
     net();
   });
   net();
+  fit();
 }
 
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => `&#${c.charCodeAt(0)};`);
@@ -130,8 +144,8 @@ const page = (c, title, body) => `<!doctype html><meta charset="utf-8"><meta nam
 <title>${esc(title)}</title>
 <meta property="og:title" content="Rush Powersports">
 <meta property="og:description" content="Shop jobs, parts and status.">
-<meta property="og:site_name" content="r.rxtm.net">
-<meta property="og:image" content="https://r.rxtm.net/og-rush.png">
+<meta property="og:site_name" content="rush.rxtm.net">
+<meta property="og:image" content="https://rush.rxtm.net/og-rush.png">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
 <meta name="twitter:card" content="summary_large_image"><style>${css}</style><main>
@@ -148,6 +162,9 @@ ${body}
 
 const nextPart = (s) => PARTS[(PARTS.indexOf(s) + 1) % PARTS.length];
 const day = (d) => d.toLocaleDateString('en-CA', { timeZone: 'America/Chicago' });
+const ago = (d) => { const m = (Date.now() - d) / 60000; return m < 1 ? 'now' : m < 60 ? `${m | 0}m` : m < 1440 ? `${m / 60 | 0}h` : `${m / 1440 | 0}d`; };
+// hidden until the browser checks it fits beside the text (fit() in browser())
+const meta = (l) => l.changedBy ? `<small class="meta" hidden>${esc(l.changedBy)} · ${ago(l.changedAt)}</small>` : '';
 
 // no name field: machine · customer, or the id's tail when both are blank
 const name = (j) => j.shop ? 'Shop' : [j.machine, j.customer].filter(Boolean).join(' · ') || `job …${String(j._id).slice(-4)}`;
@@ -171,7 +188,7 @@ const fields = (j = {}) => j.shop ? '' : `<label>machine (year make model)<input
 <label>quote<input name="quote" maxlength="2000" value="${esc(j.quote)}"></label>`;
 
 const newJob = (c) => page(c, 'New job', `<form method="post" action="/new${c.q}">${fields()}
-<label>what they want done (one per line)<textarea name="todo" rows="4" maxlength="2000"></textarea></label>
+<label>what they want done (one per line)<textarea name="todo" rows="4" maxlength="2000" placeholder="won&#39;t start&#10;new tires"></textarea></label>
 <div class="row"><button>save</button></div></form>`);
 
 const job = (c, j) => {
@@ -180,10 +197,10 @@ const job = (c, j) => {
   return page(c, name(j), `<b>${esc(name(j))}</b>
 ${j.shop ? '' : `<div class="dim">${j.phone ? `<a class="c" href="tel:${esc(j.phone)}">${esc(j.phone)}</a> · ` : ''}in ${day(j.inAt)}${j.quote ? ` · quoted ${esc(j.quote)}` : ''}${j.doneAt ? ` · <span class="y">done</span>` : ''}</div>`}
 <form ${act}>
-<h3># to do</h3><ul>${j.todo.map((t) => `<li class="${t.done ? 'done' : ''}"><button name="a" value="todo:${t.id}:${t.done ? 0 : 1}" data-next="${t.done ? '[ ]' : '[x]'}">${t.done ? '[x]' : '[ ]'}</button><span>${esc(t.text)}</span><button class="x" name="a" value="rmtodo:${t.id}">×</button>`).join('')}</ul>
-<h3># parts</h3><ul>${j.parts.map((p) => `<li><button name="a" value="part:${p.id}:${nextPart(p.state)}" class="${COLOR[p.state]}" data-next="[${nextPart(p.state)}]" data-cls="${COLOR[nextPart(p.state)]}">[${p.state}]</button><span>${esc(p.text)}</span><button class="x" name="a" value="rmpart:${p.id}">×</button>`).join('')}</ul>
+<h3># to do</h3><ul>${j.todo.map((t) => `<li class="${t.done ? 'done' : ''}"><button name="a" value="todo:${t.id}:${t.done ? 0 : 1}" data-next="${t.done ? '[ ]' : '[x]'}">${t.done ? '[x]' : '[ ]'}</button><span>${esc(t.text)}</span>${meta(t)}<button class="x" name="a" value="rmtodo:${t.id}">×</button>`).join('')}</ul>
+<h3># parts</h3><ul>${j.parts.map((p) => `<li><button name="a" value="part:${p.id}:${nextPart(p.state)}" class="${COLOR[p.state]}" data-next="[${nextPart(p.state)}]" data-cls="${COLOR[nextPart(p.state)]}">[${p.state}]</button><span>${esc(p.text)}</span>${meta(p)}<button class="x" name="a" value="rmpart:${p.id}">×</button>`).join('')}</ul>
 </form>
-<form ${act}><label>add<textarea name="text" rows="2" maxlength="2000"></textarea></label>
+<form ${act}><label>add<textarea name="text" rows="2" maxlength="2000" placeholder="type it, then tap + to do or + part&#10;one per line adds several"></textarea></label>
 <div class="row"><button name="a" value="add:todo">+ to do</button><button name="a" value="add:part">+ part</button></div></form>
 <form ${act}><h3># details</h3>${fields(j)}
 <label>notes<textarea name="notes" rows="4" maxlength="10000">${esc(j.notes)}</textarea></label>
@@ -226,7 +243,7 @@ async function serve(db) {
       }
       const text = (name) => (f.get(name) || '').trim().slice(0, name === 'notes' ? 10000 : 2000);
       const lines = (name) => text(name).split('\n').map((s) => s.trim()).filter(Boolean);
-      const line = (kind, s) => ({ id: crypto.randomBytes(4).toString('hex'), text: s, ...(kind === 'todo' ? { done: false } : { state: 'need' }), by: k.label });
+      const line = (kind, s) => ({ id: crypto.randomBytes(4).toString('hex'), text: s, ...(kind === 'todo' ? { done: false } : { state: 'need' }), createdBy: k.label });
       const set = {};
       if (f) for (const name of FIELDS) if (f.has(name)) set[name] = text(name);
       const [, route, id] = url.pathname.split('/');
@@ -243,7 +260,7 @@ async function serve(db) {
 
       if (route === 'new') {
         if (!f) return res.end(newJob({ ...c, path: '/new' }));
-        const { insertedId } = await jobs.insertOne({ shop: false, ...set, todo: lines('todo').map((s) => line('todo', s)), parts: [], inAt: new Date(), doneAt: null, by: k.label });
+        const { insertedId } = await jobs.insertOne({ shop: false, ...set, todo: lines('todo').map((s) => line('todo', s)), parts: [], inAt: new Date(), doneAt: null, createdBy: k.label });
         return back(`/job/${insertedId}`);
       }
 
@@ -258,8 +275,8 @@ async function serve(db) {
       const [op, arg, val] = (f.get('a') || '').split(':');
       const lid = /^[0-9a-f]{8}$/.test(arg) ? arg : null;
       let filter = { _id }, update;
-      if (op === 'todo' && lid) [filter, update] = [{ _id, 'todo.id': lid }, { $set: { 'todo.$.done': val === '1' } }];
-      else if (op === 'part' && lid && PARTS.includes(val)) [filter, update] = [{ _id, 'parts.id': lid }, { $set: { 'parts.$.state': val } }];
+      if (op === 'todo' && lid) [filter, update] = [{ _id, 'todo.id': lid }, { $set: { 'todo.$.done': val === '1', 'todo.$.changedBy': k.label, 'todo.$.changedAt': new Date() } }];
+      else if (op === 'part' && lid && PARTS.includes(val)) [filter, update] = [{ _id, 'parts.id': lid }, { $set: { 'parts.$.state': val, 'parts.$.changedBy': k.label, 'parts.$.changedAt': new Date() } }];
       else if (op === 'rmtodo' && lid) update = { $pull: { todo: { id: lid } } };
       else if (op === 'rmpart' && lid) update = { $pull: { parts: { id: lid } } };
       else if (op === 'add' && (arg === 'todo' || arg === 'part')) update = { $push: { [arg === 'todo' ? 'todo' : 'parts']: { $each: lines('text').map((s) => line(arg, s)) } } };

@@ -27,6 +27,6 @@ Next: eBay listing helper (Jonathan's most annoying weekly task).
 - zero dependencies except `mongodb`, exact versions (.npmrc)
 - `.env` holds MONGODB_URI, MONGODB_DB (never committed)
 - database: Atlas cluster0, own `rush` / `rush-dev` databases and own db user
-- hosting: Cloud Run service `rush`, GCP project resource-automation-61436, us-central1, at r.rxtm.net (DNS in Squarespace)
+- hosting: Cloud Run service `rush`, GCP project resource-automation-61436, us-central1, at rush.rxtm.net (DNS in Squarespace)
 - deploy with gcloud from PowerShell (gcloud fails in Git Bash here)
 - patterns to copy from ../welcome-pumpkin: keys with scopes, terminal-styled pages, Cloud Run deploy
