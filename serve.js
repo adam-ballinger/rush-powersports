@@ -1,6 +1,6 @@
 // node serve.js              start the server
-// node serve.js key "<name>" [manager] [admin] [ebay]  print a new key link for someone
-//   manager: sees all jobs, assigns and adds them. admin: the keys tab. neither: only jobs assigned to that name
+// node serve.js key "<name>" [crew] [manager] [admin] [ebay]  print a new key link for someone
+//   crew: can be assigned jobs. manager: sees all jobs, assigns and adds them. admin: the keys tab. neither: only jobs assigned to that name
 const crypto = require('crypto');
 const fs = require('fs');
 const http = require('http');
@@ -17,41 +17,62 @@ const REV = process.env.K_REVISION || 'local';
 const ogImage = fs.readFileSync(path.join(__dirname, 'og-rush.png'));
 
 const css = `
-:root{color-scheme:light;--bg:#fbfaf7;--fg:#1d1d1d;--dim:#858585;--line:#e4e2dc;--y:#a87600;--c:#0a8f9c;--m:#c8177a;--card:#fff;--s1:4px;--s2:8px;--s3:16px;--s4:24px}
+:root{color-scheme:light;--bg:#f6f4ef;--fg:#1d1d1d;--dim:#858585;--line:#e6e3db;--y:#a87600;--c:#0a8f9c;--m:#c8177a;--card:#fff;--mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;--s1:4px;--s2:8px;--s3:16px;--s4:24px}
 *{box-sizing:border-box}
 html{-webkit-text-size-adjust:100%;text-size-adjust:100%}
-body{margin:0;overflow-wrap:anywhere;background:var(--bg);color:var(--fg);font:13px/1.6 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+body{margin:0;overflow-wrap:anywhere;background:var(--bg);color:var(--fg);font:15px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+/* like MDN: what people read, tap and type is the phone's own font on white; what the app generates sits in cream mono boxes */
+.card,header,footer,button,.btn,.meta,#status{font-family:var(--mono);font-size:13px;line-height:1.6}
+header,.card,button,.btn{background:var(--card);color:var(--fg);border:1px solid var(--line);border-radius:8px}
 main{max-width:44rem;margin:0 auto;padding:var(--s4) var(--s3) 80px}
 a{color:inherit;text-decoration:none}
 .y{color:var(--y)}.c{color:var(--c)}.m{color:var(--m)}.dim{color:var(--dim)}
-h1{margin:0;font-size:1.3rem}
-nav{position:relative;display:flex;gap:var(--s4);margin:var(--s2) 0 var(--s3);border-bottom:1px solid var(--line)}
-nav a{padding:12px 0;color:var(--dim)}
-nav a.on{color:var(--fg);border-bottom:2px solid var(--c)}
+header{padding:var(--s3) var(--s3) 0;margin-bottom:var(--s3)}
+h1{margin:0;font-size:18px}
+nav{position:relative;display:flex;gap:var(--s4);margin-top:var(--s1)}
+nav a{padding:12px 0;color:var(--dim);border-bottom:2px solid transparent;transition:color .15s,border-color .15s}
+nav a.on{color:var(--fg);border-color:var(--c)}
 nav sup{color:var(--m);font-size:10px}
-h3{margin:var(--s4) 0 var(--s2);font-size:13px;font-weight:normal;color:var(--dim)}
+h2{margin:var(--s4) 0 var(--s2);font-size:17px}
+.list{padding:0 var(--s3)}
+.list li:last-child{border-bottom:0}
 .cards{display:grid;gap:var(--s2);margin-top:var(--s3)}
-.card{position:relative;display:block;padding:var(--s3);background:var(--card);border:1px solid var(--line);border-radius:8px}
+.card{position:relative;display:block;padding:var(--s3)}
 .card.shop{border-left:4px solid var(--c)}
 .card .top{display:flex;justify-content:space-between;gap:var(--s2)}
 .card .top span{white-space:nowrap}
-section.card{margin-top:var(--s3)}
-.card>form:first-child>h3:first-child,.card>h3:first-child{margin-top:0}
 ul{list-style:none;margin:0;padding:0}
 li{display:flex;align-items:baseline;gap:1ch;padding:12px 0;border-bottom:1px solid var(--line);transition:opacity .2s}
 li>span{flex:1}
-li>a{flex:1;padding:12px 0;margin:-12px 0}
 .qr{display:block;width:220px;max-width:100%;margin:var(--s2) 0 var(--s3)}
-.who{font-size:1.3rem}
+.who{display:block;font-size:18px}
 .meta{color:var(--dim);font-size:12px;white-space:nowrap}
 .done>span{color:var(--dim);text-decoration:line-through}
 label{display:block;margin-top:var(--s3);color:var(--dim)}
 input,textarea,select{display:block;width:100%;padding:var(--s2) 0;background:none;color:var(--fg);font:inherit;font-size:16px;border:0;border-bottom:1px solid var(--line);caret-color:var(--c)}
 textarea{resize:vertical}
 input:focus,textarea:focus,select:focus{outline:0;border-color:var(--c)}
-button,.btn{display:inline-block;padding:12px var(--s3);background:none;color:var(--c);font:inherit;font-size:13px;border:1px solid var(--c);border-radius:4px;cursor:pointer}
-li button{padding:12px;margin:-12px;border:0;white-space:nowrap}
+button,.btn{display:inline-block;padding:12px var(--s3);color:var(--c);cursor:pointer}
+li button,button.tag{padding:12px;margin:-12px;border:0;border-radius:4px;background:none;box-shadow:none;white-space:nowrap}
 button.x{color:var(--dim);padding:12px 18px;margin:-12px -16px -12px -10px}
+/* anything you can press sits on a 1px ledge: hover lifts it a little, pressing sinks it */
+button,.btn,a.card{box-shadow:0 1px 0 var(--line);transition:border-color .15s,box-shadow .15s,background .15s,color .15s}
+button:active,.btn:active,a.card:active{transform:translateY(1px);box-shadow:none}
+button:disabled{opacity:.5;pointer-events:none}
+:focus-visible{outline:2px solid var(--c);outline-offset:2px}
+@media (hover:hover){
+nav a:hover{color:var(--fg)}
+nav a:not(.on):hover{border-color:var(--line)}
+button:hover,.btn:hover,a.card:hover{border-color:var(--c);box-shadow:0 2px 6px rgba(0,0,0,.06)}
+li button:hover,button.tag:hover{background:var(--bg);box-shadow:none}
+button.x:hover{color:var(--m)}
+}
+.card>p:last-child{margin-bottom:0}
+.assign{position:relative}
+.assign>.spin{position:absolute;right:0;top:0}
+/* the tag highlights tightly around its text; an invisible layer keeps the tap target big */
+button.tag{position:relative;padding:2px 4px;margin:0 -4px}
+button.tag::after{content:"";position:absolute;inset:-10px -4px}
 .row{display:flex;gap:var(--s2);margin-top:var(--s3);flex-wrap:wrap}
 .pending{opacity:.5}
 li.gone{opacity:.25}
@@ -63,14 +84,14 @@ footer b{color:var(--fg);font-weight:normal}
 /* waiting: the logo's bars blink at unrelated speeds, so the pattern looks random and needs no js */
 .spin{font-style:normal;font-size:.75em}
 /* in the nav and on cards the bars float in spare space, so nothing moves */
-nav>.spin{position:absolute;right:0;top:100%;margin-top:var(--s1);line-height:1}
+nav>.spin{position:absolute;right:0;top:50%;transform:translateY(-50%);line-height:1}
 .card>.spin{position:absolute;right:var(--s3);bottom:3px;line-height:1}
 .spin i{font-style:normal;animation:flick .5s steps(1) infinite}
 .spin i+i{animation-duration:.7s}
 .spin i+i+i{animation-duration:1.1s}
 @keyframes flick{50%{opacity:.15}}
 @media (prefers-reduced-motion:reduce){.spin i{animation:none}}
-#status{position:fixed;left:50%;bottom:var(--s3);transform:translateX(-50%);padding:var(--s1) var(--s3);background:var(--bg);border:1px solid var(--line);border-radius:4px;font-size:13px;white-space:nowrap}
+#status{position:fixed;left:50%;bottom:var(--s3);transform:translateX(-50%);padding:var(--s1) var(--s3);border:1px solid var(--line);border-radius:4px;background:var(--card);white-space:nowrap}
 #status:empty{display:none}
 #status.ok{color:var(--c)}#status.err{color:var(--m)}`;
 
@@ -145,7 +166,7 @@ function browser() {
     if (btn) btn.classList.add('pending');
     if (row && row.querySelector('.meta')) row.querySelector('.meta').hidden = true;
     const x = row && row.querySelector('.x');
-    const mark = start((m) => x ? x.before(m) : row ? row.append(m) : form.querySelector('button').parentNode.append(m));
+    const mark = start((m) => x ? x.before(m) : row ? row.append(m) : (form.querySelector('.row') || form).append(m));
     const t = performance.now();
     try {
       const r = await fetch(form.action, { method: 'POST', body });
@@ -183,9 +204,9 @@ const page = (c, title, body) => `<!doctype html><meta charset="utf-8"><meta nam
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
 <meta name="twitter:card" content="summary_large_image"><style>${css}</style><main>
-<h1>Rush Powersports</h1>
-<nav>${[['jobs', '/jobs', ''], ...(c.k.scopes.includes('ebay') ? [['ebay', '/ebay', ' <sup>soon</sup>']] : []), ...(c.manager ? [['team', '/team', '']] : []), ...(c.admin ? [['keys', '/keys', '']] : [])]
-    .map(([t, href, sup]) => `<a href="${href}${c.q}"${c.tab === t ? ' class="on"' : ''}>${t}${sup}</a>`).join('')}</nav>
+<header><h1>Rush Powersports</h1>
+<nav>${[['jobs', '/jobs', ''], ...(c.manager ? [['team', '/team', '']] : []), ...(c.admin ? [['keys', '/keys', '']] : []), ...(c.k.scopes.includes('ebay') ? [['ebay', '/ebay', ' <sup>soon</sup>']] : [])]
+    .map(([t, href, sup]) => `<a href="${href}${c.q}"${c.tab === t ? ' class="on"' : ''}>${t}${sup}</a>`).join('')}</nav></header>
 ${body}
 <footer><div>${logo} <b>Resource Automation</b></div>
 <div>user ${esc(c.k.label)} · key …${c.k.key.slice(-4)}${c.id ? ` · job …${String(c.id).slice(-6)}` : ''}</div>
@@ -204,20 +225,29 @@ const meta = (l) => l.changedBy ? `<small class="meta" hidden>${esc(l.changedBy)
 // no name field: machine · customer, or the id's tail when both are blank
 const name = (j) => j.shop ? 'Shop' : [j.machine, j.customer].filter(Boolean).join(' · ') || `job …${String(j._id).slice(-4)}`;
 
+// "2/3 ✓", cyan once everything is done
+const tally = (j) => {
+  const done = j.todo.filter((t) => t.done).length;
+  return j.todo.length ? `<span class="${done === j.todo.length ? 'c' : 'dim'}">${done}/${j.todo.length} ✓</span>` : '';
+};
+const needed = (j) => {
+  const n = j.parts.filter((p) => p.state === 'need').length;
+  return n ? `<span class="m">${n} part${n > 1 ? 's' : ''} needed</span>` : '';
+};
+
 const card = (c, j) => {
   const sub = [j.machine && j.customer, c.manager && !j.shop && (j.assignedTo || 'nobody assigned')].filter(Boolean).join(' · ');
-  const need = j.parts.filter((p) => p.state === 'need').length;
   const next = j.todo.find((t) => !t.done);
-  const done = j.todo.filter((t) => t.done).length;
-  return `<a class="card${j.shop ? ' shop' : ''}" href="/job/${j._id}${c.q}"><div class="top"><b>${esc(j.machine || name(j))}</b>${j.todo.length ? `<span class="${done === j.todo.length ? 'c' : 'dim'}">${done}/${j.todo.length} ✓</span>` : ''}</div>
-${sub ? `<div class="dim">${esc(sub)}</div>` : ''}<div>${need ? `<span class="m">${need} part${need > 1 ? 's' : ''} needed</span> · ` : ''}${next ? esc(next.text) : '<span class="dim">nothing left to do</span>'}</div></a>`;
+  return `<a class="card${j.shop ? ' shop' : ''}" href="/job/${j._id}${c.q}"><div class="top"><b>${esc(j.machine || name(j))}</b>${tally(j)}</div>
+${sub ? `<div class="dim">${esc(sub)}</div>` : ''}<div>${needed(j) ? `${needed(j)} · ` : ''}${next ? esc(next.text) : '<span class="dim">nothing left to do</span>'}</div></a>`;
 };
 
 const list = (c, open, done) => page(c, 'Rush Powersports', `${c.manager ? `<a class="btn" href="/new${c.q}">+ new job</a>` : ''}
-<div class="cards">${open.map((j) => card(c, j)).join('\n')}</div>
-${done.length ? `<h3># recently done</h3><div class="cards">${done.map((j) => card(c, j)).join('\n')}</div>` : ''}`);
+<h2>Jobs</h2><div class="cards">${open.map((j) => card(c, j)).join('\n')}</div>
+${done.length ? `<h2>Recently done</h2><div class="cards">${done.map((j) => card(c, j)).join('\n')}</div>` : ''}`);
 
-const soon = (c) => page(c, 'Coming soon', '<p class="dim"># coming soon</p>');
+const soon = (c) => page(c, 'Coming soon', `<h2>eBay</h2><p class="dim">coming soon.</p>
+<div class="card"><b>feedback, ideas and issues</b><div class="dim">soon you'll tap here to tell us what's broken or what you'd like.</div></div>`);
 
 const fields = (j = {}) => j.shop ? '' : `<label>machine (year make model)<input name="machine" maxlength="2000" value="${esc(j.machine)}"></label>
 <label>customer<input name="customer" maxlength="2000" value="${esc(j.customer)}"></label>
@@ -228,52 +258,62 @@ const fields = (j = {}) => j.shop ? '' : `<label>machine (year make model)<input
 const assign = (c, j = {}) => c.manager && !j.shop ? `<label>assigned to<select name="assignedTo"><option value="">nobody</option>${[...new Set([...c.who, j.assignedTo].filter(Boolean))]
   .map((w) => `<option${w === j.assignedTo ? ' selected' : ''}>${esc(w)}</option>`).join('')}</select></label>` : '';
 
-const newJob = (c) => page(c, 'New job', `<b>new job</b>
+// on a job, managers tap [name] to cycle through the crew, then nobody
+const assignTag = (c, j) => {
+  const cycle = ['', ...c.who.sort()], next = cycle[(cycle.indexOf(j.assignedTo || '') + 1) % cycle.length];
+  const tag = (w) => `[${esc(w || 'nobody')}]`;
+  return `<button class="tag ${j.assignedTo ? 'c' : 'dim'}" name="a" value="assign:${esc(next)}" data-next="${tag(next)}" data-cls="tag ${next ? 'c' : 'dim'}">${tag(j.assignedTo)}</button>`;
+};
+
+const newJob = (c) => page(c, 'New job', `<h2>New job</h2>
 <form method="post" action="/new${c.q}">${fields()}${assign(c)}
 <label>what they want done (one per line)<textarea name="todo" rows="4" maxlength="2000" placeholder="won&#39;t start&#10;new tires"></textarea></label>
-<div class="row"><button>save</button></div></form>`);
+<div class="row"><button>↵ save</button></div></form>`);
 
 const job = (c, j) => {
   const act = `method="post" action="/job/${j._id}${c.q}"`;
   // buttons send the state they are asking for, so a repeat or stale tap can't flip the wrong way
-  return page(c, name(j), `<b>${esc(name(j))}</b>
-${j.shop ? '' : `<div class="dim">${j.phone ? `<a class="c" href="tel:${esc(j.phone)}">${esc(j.phone)}</a> · ` : ''}in ${day(j.inAt)} (${days(j.inAt, j.doneAt || new Date())})${j.quote ? ` · quoted ${esc(j.quote)}` : ''}${j.doneAt ? ` · <span class="y">done</span>` : ''}</div>`}
-<section class="card"><form ${act}>
-<h3># to do</h3><ul>${j.todo.map((t) => `<li class="${t.done ? 'done' : ''}"><button name="a" value="todo:${t.id}:${t.done ? 0 : 1}" data-next="${t.done ? '[ ]' : '[x]'}">${t.done ? '[x]' : '[ ]'}</button><span>${esc(t.text)}</span>${meta(t)}<button class="x" name="a" value="rmtodo:${t.id}">×</button>`).join('')}</ul>
-<h3># parts</h3><ul>${j.parts.map((p) => `<li><button name="a" value="part:${p.id}:${nextPart(p.state)}" class="${COLOR[p.state]}" data-next="[${nextPart(p.state)}]" data-cls="${COLOR[nextPart(p.state)]}">[${p.state}]</button><span>${esc(p.text)}</span>${meta(p)}<button class="x" name="a" value="rmpart:${p.id}">×</button>`).join('')}</ul>
+  const info = `${j.phone ? `<a class="c" href="tel:${esc(j.phone)}">${esc(j.phone)}</a> · ` : ''}in ${day(j.inAt)} (${days(j.inAt, j.doneAt || new Date())})${j.quote ? ` · quoted ${esc(j.quote)}` : ''}${j.doneAt ? ` · <span class="y">done</span>` : ''}`;
+  return page(c, name(j), `<div class="card"><div class="top"><b>${esc(name(j))}</b>${tally(j)}</div>
+${j.shop ? '' : `<div class="dim">${info}</div>`}${needed(j) ? `<div>${needed(j)}</div>` : ''}
+${j.shop ? '' : c.manager ? `<form ${act} class="assign"><span class="dim">assigned to</span> ${assignTag(c, j)}</form>`
+    : j.assignedTo ? `<div class="dim">assigned to ${esc(j.assignedTo)}</div>` : ''}</div>
+<section><form ${act}>
+<h2>To do</h2><div class="card list"><ul>${j.todo.map((t) => `<li class="${t.done ? 'done' : ''}"><button name="a" value="todo:${t.id}:${t.done ? 0 : 1}" data-next="${t.done ? '[ ]' : '[x]'}">${t.done ? '[x]' : '[ ]'}</button><span>${esc(t.text)}</span>${meta(t)}<button class="x" name="a" value="rmtodo:${t.id}">×</button>`).join('') || '<li class="dim">nothing yet</li>'}</ul></div>
+<h2>Parts</h2><div class="card list"><ul>${j.parts.map((p) => `<li><button name="a" value="part:${p.id}:${nextPart(p.state)}" class="${COLOR[p.state]}" data-next="[${nextPart(p.state)}]" data-cls="${COLOR[nextPart(p.state)]}">[${p.state}]</button><span>${esc(p.text)}</span>${meta(p)}<button class="x" name="a" value="rmpart:${p.id}">×</button>`).join('') || '<li class="dim">none</li>'}</ul></div>
 </form>
-<form ${act}><h3># add</h3><textarea name="text" rows="2" maxlength="2000" aria-label="add" placeholder="type it, then tap + to do or + part&#10;one per line adds several"></textarea>
+<form ${act}><h2>Add</h2><textarea name="text" rows="2" maxlength="2000" aria-label="add" placeholder="type it, then tap + to do or + part&#10;one per line adds several"></textarea>
 <div class="row"><button name="a" value="add:todo">+ to do</button><button name="a" value="add:part">+ part</button></div></form></section>
-<section class="card"><form ${act}><h3># details</h3>${fields(j)}${assign(c, j)}
+<section><form ${act}><h2>Details</h2>${fields(j)}
 <label>notes<textarea name="notes" rows="4" maxlength="10000">${esc(j.notes)}</textarea></label>
-<div class="row"><button name="a" value="save">save</button>${j.shop ? '' : `<button name="a" value="done:${j.doneAt ? 0 : 1}">${j.doneAt ? 'reopen' : 'mark done'}</button>`}</div></form></section>`);
+<div class="row"><button name="a" value="save">↵ save</button>${j.shop ? '' : `<button name="a" value="done:${j.doneAt ? 0 : 1}">${j.doneAt ? '↺ reopen' : '✓ mark done'}</button>`}</div></form></section>`);
 };
 
 // just a name and a code per person, no link to copy or tap, so nobody shares the wrong one or opens it as someone else
 const teamPage = (c, people) => page(c, 'Team', `<p class="dim">have them scan their code with their phone camera.</p>
-${people.map(([who, link]) => `<section class="card"><b class="who">${esc(who)}</b>${qr(link)}</section>`).join('\n') || '<p class="dim"># no one to show yet</p>'}`);
+<div class="cards">${people.map(([who, link]) => `<div class="card"><b class="who">${esc(who)}</b>${qr(link)}</div>`).join('\n')}</div>${people.length ? '' : '<p class="dim">no one to show yet.</p>'}`);
 
-const SCOPES = [['shop', 'can open the app'], ['manager', 'sees all jobs, assigns and adds them'], ['admin', 'this keys tab'], ['ebay', 'the ebay tab (coming soon)']];
+const SCOPES = [['shop', 'can open the app'], ['crew', 'can be assigned jobs'], ['manager', 'sees all jobs, assigns and adds them'], ['admin', 'this keys tab'], ['ebay', 'the ebay tab (coming soon)']];
 
-const keysPage = (c, all) => page(c, 'Keys', `<form method="post" action="/keys${c.q}"><label>name<input name="label" maxlength="40" placeholder="Brad"></label>
-<div class="row"><button name="a" value="add:shop">+ key</button><button name="a" value="add:manager">+ manager key</button></div>
-<p class="dim">manager keys see all jobs, assign and add them. other keys only see jobs assigned to that name.</p></form>
-<h3># keys</h3><ul>${all.map((x) => `<li><a href="/keys/${x._id}${c.q}">${esc(x.label)}${x.scopes.filter((s) => s !== 'shop').map((s) => ` <span class="y">${esc(s)}</span>`).join('')}${x.scopes.includes('shop') ? '' : ' <span class="m">off</span>'} <span class="dim">…${x.key.slice(-4)}${x.key === c.k.key ? ' · you' : ''}</span></a></li>`).join('')}</ul>`);
+const keysPage = (c, all) => page(c, 'Keys', `<h2>Add key</h2><form method="post" action="/keys${c.q}"><label>name<input name="label" maxlength="40" placeholder="Brad"></label>
+<div class="row"><button name="a" value="add">+ key</button></div>
+<p class="dim">new keys only see jobs assigned to that name. open a key to turn on more, like manager.</p></form>
+<h2>Keys</h2><div class="cards">${all.map((x) => `<a class="card" href="/keys/${x._id}${c.q}">${esc(x.label)}${x.scopes.filter((s) => s !== 'shop').map((s) => ` <span class="y">${esc(s)}</span>`).join('')}${x.scopes.includes('shop') ? '' : ' <span class="m">off</span>'} <span class="dim">…${x.key.slice(-4)}${x.key === c.k.key ? ' · you' : ''}</span></a>`).join('')}</div>`);
 
 // your own key can't be changed here, so you can't lock yourself out
 const keyPage = (c, x, link) => {
   const own = x.key === c.k.key;
-  return page(c, `${x.label}'s key`, `<b>${esc(x.label)}</b>
-<div class="dim">key …${x.key.slice(-4)} · made ${day(x.createdAt)}${x.createdBy ? ` by ${esc(x.createdBy)}` : ''}</div>
-<section class="card"><h3># scan to open jobs</h3>${qr(link)}<a class="c" href="${esc(link)}" target="_blank" rel="noopener">${esc(link)}</a>
-<div class="row"><button type="button" data-copy="${esc(x.key)}">copy key</button></div>
-<p class="dim">anyone with this link gets in with these scopes.</p></section>
-<section class="card"><form method="post" action="/keys/${x._id}${c.q}"><h3># scopes</h3><ul>${SCOPES.map(([s, what]) => {
+  return page(c, `${x.label}'s key`, `<div class="card"><b>${esc(x.label)}</b>
+<div class="dim">key …${x.key.slice(-4)} · made ${day(x.createdAt)}${x.createdBy ? ` by ${esc(x.createdBy)}` : ''}</div></div>
+<section><h2>Scan to open jobs</h2><div class="card">${qr(link)}<a class="c" href="${esc(link)}" target="_blank" rel="noopener">${esc(link)}</a>
+<div class="row"><button type="button" data-copy="${esc(x.key)}">⧉ copy key</button></div>
+<p class="dim">anyone with this link gets in with these scopes.</p></div></section>
+<section><form method="post" action="/keys/${x._id}${c.q}"><h2>Scopes</h2><div class="card list"><ul>${SCOPES.map(([s, what]) => {
     const on = x.scopes.includes(s);
     return `<li><button name="a" value="scope:${s}:${on ? 0 : 1}" data-next="${on ? '[ ]' : '[x]'}"${own ? ' disabled' : ''}>${on ? '[x]' : '[ ]'}</button><span>${s} <span class="dim">${what}</span></span></li>`;
-  }).join('')}</ul></form></section>
+  }).join('')}</ul></div></form></section>
 ${own ? '<p class="dim">this is your key, so it can&#39;t be changed or revoked here.</p>'
-    : `<form method="post" action="/keys/${x._id}${c.q}"><div class="row"><button name="a" value="revoke">revoke key</button></div></form>`}`);
+    : `<form method="post" action="/keys/${x._id}${c.q}"><div class="row"><button name="a" value="revoke">× revoke key</button></div></form>`}`);
 };
 
 // tiny QR encoder: byte mode, version 5 (37x37), error level L, mask 0. fits links up to 106 bytes
@@ -398,9 +438,8 @@ async function serve(db) {
         if (!admin) return res.writeHead(404).end();
         if (!id) {
           if (!f) return res.end(keysPage({ ...c, tab: 'keys' }, await keys.find().sort({ createdAt: 1 }).toArray()));
-          const [op, arg] = (f.get('a') || '').split(':');
-          if (op !== 'add' || !text('label')) return back('/keys');
-          const x = await addKey(db, text('label').slice(0, 40), arg === 'manager' ? ['manager'] : [], k.label);
+          if (f.get('a') !== 'add' || !text('label')) return back('/keys');
+          const x = await addKey(db, text('label').slice(0, 40), [], k.label);
           return back(`/keys/${x._id}`);
         }
         if (!/^[0-9a-f]{24}$/.test(id)) return res.writeHead(404).end();
@@ -419,7 +458,7 @@ async function serve(db) {
 
       if (route === 'new') {
         if (!manager) return res.writeHead(404).end();
-        if (!f) return res.end(newJob({ ...c, who: await keys.distinct('label') }));
+        if (!f) return res.end(newJob({ ...c, who: await keys.distinct('label', { scopes: { $all: ['shop', 'crew'] } }) }));
         const { insertedId } = await jobs.insertOne({ shop: false, ...set, todo: lines('todo').map((s) => line('todo', s)), parts: [], inAt: new Date(), doneAt: null, createdBy: k.label });
         return back(`/job/${insertedId}`);
       }
@@ -427,7 +466,7 @@ async function serve(db) {
       if (route !== 'job' || !/^[0-9a-f]{24}$/.test(id)) return res.writeHead(404).end();
       const _id = new ObjectId(id);
       if (!f) {
-        const [j, who] = await Promise.all([jobs.findOne({ _id, ...mine }), manager ? keys.distinct('label') : []]);
+        const [j, who] = await Promise.all([jobs.findOne({ _id, ...mine }), manager ? keys.distinct('label', { scopes: { $all: ['shop', 'crew'] } }) : []]);
         return j ? res.end(job({ ...c, id, who }, j)) : res.writeHead(404).end();
       }
 
@@ -440,6 +479,7 @@ async function serve(db) {
       else if (op === 'rmtodo' && lid) update = { $pull: { todo: { id: lid } } };
       else if (op === 'rmpart' && lid) update = { $pull: { parts: { id: lid } } };
       else if (op === 'add' && (arg === 'todo' || arg === 'part')) update = { $push: { [arg === 'todo' ? 'todo' : 'parts']: { $each: lines('text').map((s) => line(arg, s)) } } };
+      else if (op === 'assign' && manager) [filter, update] = [{ _id, shop: false }, { $set: { assignedTo: f.get('a').slice(7, 47) } }];
       else if (op === 'save' && Object.keys(set).length) update = { $set: set };
       else if (op === 'done') [filter, update] = [{ _id, shop: false }, { $set: { ...set, doneAt: arg === '1' ? new Date() : null } }];
       if (update) await jobs.updateOne({ ...filter, ...mine }, update);
