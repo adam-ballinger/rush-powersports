@@ -27,12 +27,20 @@ header,.card,button,.btn{background:var(--card);color:var(--fg);border:1px solid
 main{max-width:44rem;margin:0 auto;padding:var(--s4) var(--s3) 80px}
 a{color:inherit;text-decoration:none}
 .y{color:var(--y)}.c{color:var(--c)}.m{color:var(--m)}.dim{color:var(--dim)}
-header{padding:var(--s3) var(--s3) 0;margin-bottom:var(--s3)}
-h1{margin:0;font-size:18px}
-nav{position:relative;display:flex;gap:var(--s4);margin-top:var(--s1)}
+header{padding:0 var(--s3);margin-bottom:var(--s3)}
+h1{margin:0 0 var(--s3);font-size:18px}
+nav{position:relative;display:flex;gap:var(--s4)}
 nav a{padding:12px 0;color:var(--dim);border-bottom:2px solid transparent;transition:color .15s,border-color .15s}
 nav a.on{color:var(--fg);border-color:var(--c)}
 nav sup{color:var(--m);font-size:10px}
+.filter{position:relative;display:flex;flex-wrap:wrap;gap:0 var(--s3);font:13px var(--mono)}
+.filter a{padding:12px 0;color:var(--dim);border-bottom:2px solid transparent;transition:color .15s,border-color .15s}
+.filter a.on{color:var(--fg);border-color:var(--c)}
+.filter>.spin{position:absolute;right:0;top:50%;transform:translateY(-50%);line-height:1}
+/* parts tab: the part text is a button that looks like text; machine and who sit small underneath */
+li button.t{display:block;padding:0;margin:0;font:inherit;color:var(--fg);text-align:left;white-space:normal}
+li small{display:block;color:var(--dim);font-size:12px}
+li small a{color:var(--c)}
 h2{margin:var(--s4) 0 var(--s2);font-size:17px}
 .list{padding:0 var(--s3)}
 .list li:last-child{border-bottom:0}
@@ -41,6 +49,10 @@ h2{margin:var(--s4) 0 var(--s2);font-size:17px}
 .card.shop{border-left:4px solid var(--c)}
 .card .top{display:flex;justify-content:space-between;gap:var(--s2)}
 .card .top span{white-space:nowrap}
+.card .top .r{display:flex;flex-direction:column;align-items:flex-end;text-align:right}
+.card sup{color:var(--m);font-size:10px}
+h2 .sort{position:relative;float:right;padding:12px 0;margin-top:-12px;font:13px var(--mono);color:var(--dim);border-bottom:2px solid transparent;transition:color .15s,border-color .15s}
+.sort>.spin{position:absolute;right:100%;white-space:nowrap;top:50%;transform:translateY(-50%);margin-right:1ch;line-height:1}
 ul{list-style:none;margin:0;padding:0}
 li{display:flex;align-items:baseline;gap:1ch;padding:12px 0;border-bottom:1px solid var(--line);transition:opacity .2s}
 li>span{flex:1}
@@ -62,7 +74,9 @@ button:disabled{opacity:.5;pointer-events:none}
 :focus-visible{outline:2px solid var(--c);outline-offset:2px}
 @media (hover:hover){
 nav a:hover{color:var(--fg)}
-nav a:not(.on):hover{border-color:var(--line)}
+nav a:not(.on):hover,h2 .sort:hover{border-color:var(--line)}
+h2 .sort:hover{color:var(--fg)}
+.filter a:not(.on):hover{color:var(--fg);border-color:var(--line)}
 button:hover,.btn:hover,a.card:hover{border-color:var(--c);box-shadow:0 2px 6px rgba(0,0,0,.06)}
 li button:hover,button.tag:hover{background:var(--bg);box-shadow:none}
 button.x:hover{color:var(--m)}
@@ -137,7 +151,7 @@ function browser() {
 
   document.addEventListener('click', (e) => {
     const a = e.target.closest('a[href^="/"]');
-    if (a && !busy && !e.ctrlKey && !e.metaKey && !e.shiftKey) start((m) => a.closest('nav') ? a.closest('nav').append(m) : a.append(' ', m));
+    if (a && !busy && !e.ctrlKey && !e.metaKey && !e.shiftKey) start((m) => a.closest('nav, .filter') ? a.closest('nav, .filter').append(m) : a.append(' ', m));
   });
 
   // the clipboard api only exists on https and localhost, so fall back to a hidden textarea on plain http
@@ -169,7 +183,8 @@ function browser() {
     const mark = start((m) => x ? x.before(m) : row ? row.append(m) : (form.querySelector('.row') || form).append(m));
     const t = performance.now();
     try {
-      const r = await fetch(form.action, { method: 'POST', body });
+      // parts tab rows post to their own job; formAction without the attribute is the page url, so check it's set
+      const r = await fetch(btn && btn.hasAttribute('formaction') ? btn.formAction : form.action, { method: 'POST', body });
       if (!r.ok) throw new Error(r.status);
       const doc = new DOMParser().parseFromString(await r.text(), 'text/html');
       $('main').replaceWith(doc.querySelector('main'));
@@ -204,8 +219,8 @@ const page = (c, title, body) => `<!doctype html><meta charset="utf-8"><meta nam
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
 <meta name="twitter:card" content="summary_large_image"><style>${css}</style><main>
-<header><h1>Rush Powersports</h1>
-<nav>${[['jobs', '/jobs', ''], ...(c.manager ? [['team', '/team', '']] : []), ...(c.admin ? [['keys', '/keys', '']] : []), ...(c.k.scopes.includes('ebay') ? [['ebay', '/ebay', ' <sup>soon</sup>']] : [])]
+<h1>Rush Powersports</h1><header>
+<nav>${[['jobs', '/jobs', c.fresh ? ` <sup>${c.fresh}</sup>` : ''], ['parts', '/parts', c.need ? ` <sup>${c.need}</sup>` : ''], ['issues', '/issues', ''], ...(c.manager ? [['team', '/team', '']] : []), ...(c.admin ? [['keys', '/keys', '']] : []), ...(c.k.scopes.includes('ebay') ? [['ebay', '/ebay', ' <sup>soon</sup>']] : [])]
     .map(([t, href, sup]) => `<a href="${href}${c.q}"${c.tab === t ? ' class="on"' : ''}>${t}${sup}</a>`).join('')}</nav></header>
 ${body}
 <footer><div>${logo} <b>Resource Automation</b></div>
@@ -235,24 +250,48 @@ const needed = (j) => {
   return n ? `<span class="m">${n} part${n > 1 ? 's' : ''} needed</span>` : '';
 };
 
+// opened in the last 24h: "new" on the card, counted in the jobs tab badge
+const isNew = (j) => !j.shop && !j.doneAt && Date.now() - j.inAt < 864e5;
+
+// top right of job cards and the job page: "in 2026-10-08 · 1 day"
+const age = (j) => j.shop ? '' : `<span class="dim">in ${day(j.inAt)} · ${days(j.inAt, j.doneAt || new Date())}</span>`;
+
 const card = (c, j) => {
   const sub = [j.machine && j.customer, c.manager && !j.shop && (j.assignedTo || 'nobody assigned')].filter(Boolean).join(' · ');
-  const next = j.todo.find((t) => !t.done);
-  return `<a class="card${j.shop ? ' shop' : ''}" href="/job/${j._id}${c.q}"><div class="top"><b>${esc(j.machine || name(j))}</b>${tally(j)}</div>
-${sub ? `<div class="dim">${esc(sub)}</div>` : ''}<div>${needed(j) ? `${needed(j)} · ` : ''}${next ? esc(next.text) : '<span class="dim">nothing left to do</span>'}</div></a>`;
+  return `<a class="card${j.shop ? ' shop' : ''}" href="/job/${j._id}${c.q}"><div class="top"><div><b>${esc(j.machine || name(j))}${isNew(j) ? ' <sup>new</sup>' : ''}</b>${sub ? `<div class="dim">${esc(sub)}</div>` : ''}</div><div class="r">${age(j)}${tally(j)}</div></div>
+${needed(j) ? `<div>${needed(j)}</div>` : ''}</a>`;
 };
 
 const list = (c, open, done) => page(c, 'Rush Powersports', `${c.manager ? `<a class="btn" href="/new${c.q}">+ new job</a>` : ''}
-<h2>Jobs</h2><div class="cards">${open.map((j) => card(c, j)).join('\n')}</div>
+<h2>Open Jobs<a class="sort" href="/jobs${c.q}${c.sort ? '' : '&sort=new'}">${c.sort ? 'newest first' : 'oldest first'}</a></h2><div class="cards">${open.map((j) => card(c, j)).join('\n')}</div>
 ${done.length ? `<h2>Recently done</h2><div class="cards">${done.map((j) => card(c, j)).join('\n')}</div>` : ''}`);
 
 const soon = (c) => page(c, 'Coming soon', `<h2>eBay</h2><p class="dim">coming soon.</p>
-<div class="card"><b>feedback, ideas and issues</b><div class="dim">soon you'll tap here to tell us what's broken or what you'd like.</div></div>`);
+<a class="card" href="/issues${c.q}"><b>feedback, ideas and issues</b><div class="dim">tap here to tell us what's broken or what you'd like.</div></a>`);
+
+// everyone sees every issue; admins tick them off
+// every part on open jobs; each button posts to its own job, then the server sends us back here with the same filter
+const partsPage = (c, rows, counts, state) => page(c, 'Parts', `<h2>Open Parts</h2>
+<div class="filter">${['', ...PARTS].map((s) => `<a href="/parts${c.q}${s ? `&state=${s}` : ''}"${s === state ? ' class="on"' : ''}>${s || 'all'} ${s ? counts[s] : rows.total}</a>`).join('')}</div>
+<form method="post" action="/parts${c.q}"><input type="hidden" name="to" value="parts"><input type="hidden" name="state" value="${state}">
+<div class="card list"><ul>${rows.map(({ j, p }) => {
+    const go = `name="a" value="part:${p.id}:${nextPart(p.state)}" formaction="/job/${j._id}${c.q}"`;
+    return `<li><button ${go} class="${COLOR[p.state]}" data-next="[${nextPart(p.state)}]" data-cls="${COLOR[nextPart(p.state)]}">[${p.state}]</button><span><button class="t" ${go}>${esc(p.text)}</button>
+<small><a href="/job/${j._id}${c.q}">${esc(j.machine || name(j))}</a>${p.createdBy ? ` · ${esc(p.createdBy)}` : ''}</small></span></li>`;
+  }).join('') || '<li class="dim">nothing here</li>'}</ul></div></form>`);
+
+const issueRow = (c, i) => `<li class="${i.doneAt ? 'done' : ''}">${c.admin ? `<button name="a" value="done:${i._id}:${i.doneAt ? 0 : 1}" data-next="${i.doneAt ? '[ ]' : '[x]'}">${i.doneAt ? '[x]' : '[ ]'}</button>` : ''}<span>${esc(i.text)}</span>${meta(i)}</li>`;
+const issuesPage = (c, open, done) => page(c, 'Issues', `<form method="post" action="/issues${c.q}"><h2>Tell us</h2>
+<textarea name="text" rows="3" maxlength="2000" aria-label="issue" placeholder="what's broken, or what you'd like"></textarea>
+<div class="row"><button name="a" value="add">+ send</button></div></form>
+<form method="post" action="/issues${c.q}"><h2>Open</h2><div class="card list"><ul>${open.map((i) => issueRow(c, i)).join('') || '<li class="dim">nothing yet</li>'}</ul></div>
+${done.length ? `<h2>Fixed</h2><div class="card list"><ul>${done.map((i) => issueRow(c, i)).join('')}</ul></div>` : ''}</form>`);
 
 const fields = (j = {}) => j.shop ? '' : `<label>machine (year make model)<input name="machine" maxlength="2000" value="${esc(j.machine)}"></label>
 <label>customer<input name="customer" maxlength="2000" value="${esc(j.customer)}"></label>
 <label>phone<input name="phone" type="tel" maxlength="2000" value="${esc(j.phone)}"></label>
-<label>quote<input name="quote" maxlength="2000" value="${esc(j.quote)}"></label>`;
+<label>quote<input name="quote" maxlength="2000" value="${esc(j.quote)}"></label>
+<label>in date<input name="in" type="date" max="${day(new Date())}" value="${day(j.inAt || new Date())}"></label><input type="hidden" name="in0" value="${j.inAt ? day(j.inAt) : ''}">`;
 
 // managers pick from key labels; keep the current name even if its key was revoked
 const assign = (c, j = {}) => c.manager && !j.shop ? `<label>assigned to<select name="assignedTo"><option value="">nobody</option>${[...new Set([...c.who, j.assignedTo].filter(Boolean))]
@@ -273,9 +312,9 @@ const newJob = (c) => page(c, 'New job', `<h2>New job</h2>
 const job = (c, j) => {
   const act = `method="post" action="/job/${j._id}${c.q}"`;
   // buttons send the state they are asking for, so a repeat or stale tap can't flip the wrong way
-  const info = `${j.phone ? `<a class="c" href="tel:${esc(j.phone)}">${esc(j.phone)}</a> · ` : ''}in ${day(j.inAt)} (${days(j.inAt, j.doneAt || new Date())})${j.quote ? ` · quoted ${esc(j.quote)}` : ''}${j.doneAt ? ` · <span class="y">done</span>` : ''}`;
-  return page(c, name(j), `<div class="card"><div class="top"><b>${esc(name(j))}</b>${tally(j)}</div>
-${j.shop ? '' : `<div class="dim">${info}</div>`}${needed(j) ? `<div>${needed(j)}</div>` : ''}
+  const info = [j.phone && `<a class="c" href="tel:${esc(j.phone)}">${esc(j.phone)}</a>`, j.quote && `quoted ${esc(j.quote)}`, j.doneAt && '<span class="y">done</span>'].filter(Boolean).join(' · ');
+  return page(c, name(j), `<div class="card"><div class="top"><b>${esc(name(j))}</b><div class="r">${age(j)}${tally(j)}</div></div>
+${info ? `<div class="dim">${info}</div>` : ''}${needed(j) ? `<div>${needed(j)}</div>` : ''}
 ${j.shop ? '' : c.manager ? `<form ${act} class="assign"><span class="dim">assigned to</span> ${assignTag(c, j)}</form>`
     : j.assignedTo ? `<div class="dim">assigned to ${esc(j.assignedTo)}</div>` : ''}</div>
 <section><form ${act}>
@@ -285,7 +324,7 @@ ${j.shop ? '' : c.manager ? `<form ${act} class="assign"><span class="dim">assig
 <form ${act}><h2>Add</h2><textarea name="text" rows="2" maxlength="2000" aria-label="add" placeholder="type it, then tap + to do or + part&#10;one per line adds several"></textarea>
 <div class="row"><button name="a" value="add:todo">+ to do</button><button name="a" value="add:part">+ part</button></div></form></section>
 <section><form ${act}><h2>Details</h2>${fields(j)}
-<label>notes<textarea name="notes" rows="4" maxlength="10000">${esc(j.notes)}</textarea></label>
+<label>notes<textarea name="notes" rows="4" maxlength="10000">${esc(j.notes)}</textarea></label>${assign(c, j)}
 <div class="row"><button name="a" value="save">↵ save</button>${j.shop ? '' : `<button name="a" value="done:${j.doneAt ? 0 : 1}">${j.doneAt ? '↺ reopen' : '✓ mark done'}</button>`}</div></form></section>`);
 };
 
@@ -397,6 +436,13 @@ async function serve(db) {
       const c = { k, admin, manager, q: `?key=${k.key}`, t0, tab: 'jobs' };
       // everyone else only reaches the shop job and jobs assigned to their name
       const mine = manager ? {} : { $or: [{ shop: true }, { assignedTo: k.label }] };
+      // nav badges: jobs opened in the last 24h, and parts still needed on open jobs
+      const [fresh, [need]] = await Promise.all([
+        jobs.countDocuments({ shop: false, doneAt: null, inAt: { $gt: new Date(Date.now() - 864e5) }, ...mine }),
+        jobs.aggregate([{ $match: { doneAt: null, ...mine } }, { $unwind: '$parts' }, { $match: { 'parts.state': 'need' } }, { $count: 'n' }]).toArray(),
+      ]);
+      c.fresh = fresh;
+      c.need = need ? need.n : 0;
       const back = (to) => res.writeHead(303, { Location: to + c.q }).end();
       res.setHeader('Content-Type', 'text/html; charset=utf-8');
 
@@ -412,17 +458,48 @@ async function serve(db) {
       const line = (kind, s) => ({ id: crypto.randomBytes(4).toString('hex'), text: s, ...(kind === 'todo' ? { done: false } : { state: 'need' }), createdBy: k.label });
       const set = {};
       if (f) for (const name of FIELDS) if (f.has(name)) set[name] = text(name);
+      // in date: today means now; a past day means noon that day in shop time; unchanged or future is ignored
+      const inDay = f && f.get('in');
+      if (/^\d{4}-\d{2}-\d{2}$/.test(inDay) && inDay !== f.get('in0') && inDay <= day(new Date()))
+        set.inAt = inDay === day(new Date()) ? new Date() : new Date(`${inDay}T12:00:00-06:00`);
       if (f && manager && f.has('assignedTo')) set.assignedTo = text('assignedTo');
       const [, route, id] = url.pathname.split('/');
 
       if (route === '' || route === 'jobs') {
+        c.sort = url.searchParams.get('sort') === 'new';
         const [open, done] = await Promise.all([
-          jobs.find({ doneAt: null, ...mine }).sort({ shop: -1, inAt: 1 }).toArray(),
+          jobs.find({ doneAt: null, ...mine }).sort({ shop: -1, inAt: c.sort ? -1 : 1 }).toArray(),
           jobs.find({ doneAt: { $ne: null }, ...mine }).sort({ doneAt: -1 }).limit(5).toArray(),
         ]);
         return res.end(list(c, open, done));
       }
+      if (route === 'parts') {
+        const state = PARTS.includes(url.searchParams.get('state')) ? url.searchParams.get('state') : '';
+        const all = (await jobs.find({ doneAt: null, ...mine }).sort({ shop: -1, inAt: 1 }).toArray())
+          .flatMap((j) => j.parts.map((p) => ({ j, p })))
+          .sort((a, b) => PARTS.indexOf(a.p.state) - PARTS.indexOf(b.p.state));
+        const counts = Object.fromEntries(PARTS.map((s) => [s, all.filter((r) => r.p.state === s).length]));
+        const rows = state ? all.filter((r) => r.p.state === state) : all;
+        rows.total = all.length;
+        return res.end(partsPage({ ...c, tab: 'parts' }, rows, counts, state));
+      }
       if (route === 'ebay' && c.k.scopes.includes('ebay')) return res.end(soon({ ...c, tab: 'ebay' }));
+
+      if (route === 'issues' && !id) {
+        const issues = db.collection('issues');
+        if (!f) {
+          const [open, done] = await Promise.all([
+            issues.find({ doneAt: null }).sort({ changedAt: -1 }).toArray(),
+            issues.find({ doneAt: { $ne: null } }).sort({ doneAt: -1 }).limit(10).toArray(),
+          ]);
+          return res.end(issuesPage({ ...c, tab: 'issues' }, open, done));
+        }
+        const [op, arg, val] = (f.get('a') || '').split(':');
+        // changedBy/changedAt is who wrote it, so meta() shows "who · when" like job lines
+        if (op === 'add' && text('text')) await issues.insertOne({ text: text('text'), changedBy: k.label, changedAt: new Date(), doneAt: null });
+        if (op === 'done' && admin && /^[0-9a-f]{24}$/.test(arg)) await issues.updateOne({ _id: new ObjectId(arg) }, { $set: { doneAt: val === '1' ? new Date() : null, doneBy: k.label } });
+        return back('/issues');
+      }
 
       const origin = `${req.headers['x-forwarded-proto'] || 'http'}://${req.headers.host}`;
       if (route === 'team') {
@@ -459,7 +536,7 @@ async function serve(db) {
       if (route === 'new') {
         if (!manager) return res.writeHead(404).end();
         if (!f) return res.end(newJob({ ...c, who: await keys.distinct('label', { scopes: { $all: ['shop', 'crew'] } }) }));
-        const { insertedId } = await jobs.insertOne({ shop: false, ...set, todo: lines('todo').map((s) => line('todo', s)), parts: [], inAt: new Date(), doneAt: null, createdBy: k.label });
+        const { insertedId } = await jobs.insertOne({ shop: false, todo: lines('todo').map((s) => line('todo', s)), parts: [], inAt: new Date(), ...set, doneAt: null, createdBy: k.label });
         return back(`/job/${insertedId}`);
       }
 
@@ -483,6 +560,7 @@ async function serve(db) {
       else if (op === 'save' && Object.keys(set).length) update = { $set: set };
       else if (op === 'done') [filter, update] = [{ _id, shop: false }, { $set: { ...set, doneAt: arg === '1' ? new Date() : null } }];
       if (update) await jobs.updateOne({ ...filter, ...mine }, update);
+      if (f.get('to') === 'parts') return res.writeHead(303, { Location: `/parts${c.q}${PARTS.includes(f.get('state')) ? `&state=${f.get('state')}` : ''}` }).end();
       back(op === 'done' && arg === '1' ? '/jobs' : `/job/${id}`);
     } catch (e) {
       console.error(e);
