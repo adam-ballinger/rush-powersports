@@ -17,6 +17,7 @@ const MANAGER_ONLY = ['customer', 'phone', 'quote'];
 const PARTS = ['need', 'ordered', 'in'];
 const COLOR = { need: 'm', ordered: 'y', in: 'c' };
 const REV = process.env.K_REVISION || 'local';
+const BUCKET = 'rush-photos-61436';
 const ogImage = fs.readFileSync(path.join(__dirname, 'og-rush.png'));
 const icon = fs.readFileSync(path.join(__dirname, 'icon-bars.png'));
 // the browser tab gets the logo's bars on no background; home screens keep icon-bars.png, on white
@@ -122,6 +123,14 @@ nav>.spin{position:absolute;right:0;top:50%;transform:translateY(-50%);line-heig
 @media (prefers-reduced-motion:reduce){.spin i{animation:none}}
 #status{position:fixed;left:50%;bottom:var(--s3);transform:translateX(-50%);padding:var(--s1) var(--s3);border:1px solid var(--line);border-radius:4px;background:var(--card);white-space:nowrap}
 #status:empty{display:none}
+/* photos: square tiles, oldest first, so the first is "before" and the last is "after" */
+.photos{display:grid;grid-template-columns:repeat(auto-fill,minmax(96px,1fr));gap:var(--s2)}
+.photos li{display:block;position:relative;padding:0;border:0}
+.photos img{display:block;width:100%;aspect-ratio:1;object-fit:cover;background:var(--line);border:1px solid var(--line);border-radius:8px}
+.photos small{display:block;color:var(--dim);font:12px var(--mono)}
+.photos button.x{position:absolute;top:0;right:0;margin:0;padding:2px 8px;background:var(--card);border-radius:0 8px 0 8px}
+label.btn{display:inline-block;margin:0;color:var(--c)}
+label.btn input{position:absolute;width:1px;height:1px;opacity:0}
 #status.ok{color:var(--c)}#status.err{color:var(--m)}`;
 
 // runs in the browser: instant feedback on tap, then a second step once the db answers
@@ -186,6 +195,45 @@ function browser() {
     status('✓ copied', 'ok');
   });
 
+  // put the page the server sent back in place of this one
+  const swap = async (r, t) => {
+    if (!r.ok) throw new Error(r.status);
+    const doc = new DOMParser().parseFromString(await r.text(), 'text/html');
+    $('main').replaceWith(doc.querySelector('main'));
+    document.title = doc.title;
+    if (r.url !== location.href) history.replaceState(null, '', r.url);
+    fit();
+    status(`✓ saved <span class="dim">${Math.round(performance.now() - t)}ms</span>`, 'ok');
+  };
+
+  // photos shrink on the phone (a 5MB camera shot becomes ~300KB, location data dropped), then a small and a big jpeg go up together
+  const jpeg = (img, max, q) => {
+    const s = Math.min(1, max / Math.max(img.width, img.height)), cv = document.createElement('canvas');
+    cv.width = Math.round(img.width * s);
+    cv.height = Math.round(img.height * s);
+    cv.getContext('2d').drawImage(img, 0, 0, cv.width, cv.height);
+    return new Promise((ok) => cv.toBlob(ok, 'image/jpeg', q));
+  };
+  document.addEventListener('change', async (e) => {
+    const input = e.target.closest('[data-photo]');
+    if (!input || busy || !input.files.length) return;
+    const files = [...input.files], mark = start((m) => input.parentElement.after(m)), t = performance.now();
+    try {
+      for (const [i, file] of files.entries()) {
+        if (files.length > 1) status(`photo ${i + 1} of ${files.length}…`);
+        const img = await createImageBitmap(file), small = await jpeg(img, 480, 0.7), big = await jpeg(img, 1600, 0.82);
+        const r = await fetch(input.dataset.photo, { method: 'POST', headers: { 'x-thumb': small.size }, body: new Blob([small, big]) });
+        if (i === files.length - 1) await swap(r, t); else if (!r.ok) throw new Error(r.status);
+      }
+    } catch (err) {
+      mark.remove();
+      input.value = '';
+      status(`✗ photo not saved (${navigator.onLine ? err.message : 'offline'}) · try again`, 'err');
+    }
+    stop();
+    net();
+  });
+
   document.addEventListener('submit', async (e) => {
     e.preventDefault();
     if (busy) return;
@@ -201,14 +249,7 @@ function browser() {
     const t = performance.now();
     try {
       // parts tab rows post to their own job; formAction without the attribute is the page url, so check it's set
-      const r = await fetch(btn && btn.hasAttribute('formaction') ? btn.formAction : form.action, { method: 'POST', body });
-      if (!r.ok) throw new Error(r.status);
-      const doc = new DOMParser().parseFromString(await r.text(), 'text/html');
-      $('main').replaceWith(doc.querySelector('main'));
-      document.title = doc.title;
-      if (r.url !== location.href) history.replaceState(null, '', r.url);
-      fit();
-      status(`✓ saved <span class="dim">${Math.round(performance.now() - t)}ms</span>`, 'ok');
+      await swap(await fetch(btn && btn.hasAttribute('formaction') ? btn.formAction : form.action, { method: 'POST', body }), t);
     } catch (err) {
       if (btn) [btn.innerHTML, btn.className] = undo;
       if (row) row.classList.remove('gone');
@@ -403,7 +444,7 @@ const newJob = (c) => page(c, 'New job', `<h2>New job</h2>
 <div class="row"><button>↵ save</button></div></form>`);
 
 const job = (c, j) => {
-  const act = `method="post" action="/job/${j._id}${c.q}"`;
+  const act = `method="post" action="/job/${j._id}${c.q}"`, photos = j.photos || [], src = (p) => `/photo/${j._id}/${p.id}`;
   // buttons send the state they are asking for, so a repeat or stale tap can't flip the wrong way
   return page(c, name(j), `${card(c, j, act)}
 <section><form ${act}>
@@ -412,6 +453,8 @@ const job = (c, j) => {
 </form>
 <form ${act}><h2>Add</h2><textarea name="text" rows="2" maxlength="2000" aria-label="add" placeholder="type it, then tap + to do or + part&#10;one per line adds several"></textarea>
 <div class="row"><button name="a" value="add:todo">+ to do</button><button name="a" value="add:part">+ part</button></div></form></section>
+<section><form ${act}><h2>Photos</h2>${photos.length ? `<ul class="photos">${photos.map((p) => `<li><a href="${src(p)}.jpg${c.q}"><img src="${src(p)}-t.jpg${c.q}" alt="photo" loading="lazy"></a><small>${day(p.at).slice(5).replace('-', '/')} ${esc(p.by)}</small><button class="x" name="a" value="rmphoto:${p.id}" aria-label="remove photo">×</button></li>`).join('')}</ul>` : '<p class="dim">none yet. before and after shots go here.</p>'}
+<div class="row"><label class="btn">+ photo<input type="file" accept="image/*" multiple data-photo="/job/${j._id}/photo${c.q}"></label></div></form></section>
 <section><form ${act}><h2>Details</h2>${fields(c, j)}
 <label>notes<textarea name="notes" rows="4" maxlength="10000">${esc(j.notes)}</textarea></label>${assign(c, j)}
 <div class="row"><button name="a" value="save">↵ save</button>${j.shop ? '' : `<button name="a" value="done:${j.doneAt ? 0 : 1}">${j.doneAt ? '↺ reopen' : '✓ mark done'}</button>`}</div></form></section>`);
@@ -498,6 +541,21 @@ function qr(text) {
   return `<svg class="qr" viewBox="0 0 45 45" shape-rendering="crispEdges" role="img" aria-label="qr code"><rect width="45" height="45" fill="#fff"/><path d="${d}"/></svg>`;
 }
 
+// zero deps, like backup.js: on Cloud Run the metadata server hands out a token; locally set GCS_TOKEN to `gcloud auth print-access-token`
+let token = { until: 0 };
+async function gcs(name, body) {
+  if (!process.env.GCS_TOKEN && Date.now() > token.until) {
+    const t = await (await fetch('http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token', { headers: { 'Metadata-Flavor': 'Google' } })).json();
+    token = { v: t.access_token, until: Date.now() + (t.expires_in - 300) * 1000 };
+  }
+  const o = encodeURIComponent(name), auth = { Authorization: `Bearer ${process.env.GCS_TOKEN || token.v}` };
+  // ifGenerationMatch=0: a photo is never overwritten
+  const r = body ? await fetch(`https://storage.googleapis.com/upload/storage/v1/b/${BUCKET}/o?uploadType=media&ifGenerationMatch=0&name=${o}`, { method: 'POST', headers: { ...auth, 'Content-Type': 'image/jpeg' }, body })
+    : await fetch(`https://storage.googleapis.com/storage/v1/b/${BUCKET}/o/${o}?alt=media`, { headers: auth });
+  if (!r.ok) throw new Error(`gcs ${r.status} ${name}`);
+  return r;
+}
+
 async function serve(db) {
   const jobs = db.collection('jobs'), keys = db.collection('keys');
   await jobs.updateOne({ shop: true }, { $setOnInsert: { shop: true, todo: [], parts: [], notes: '', inAt: new Date(), doneAt: null } }, { upsert: true });
@@ -527,6 +585,33 @@ async function serve(db) {
       const c = { k, admin, manager, q: `?key=${k.key}`, t0, tab: 'jobs' };
       // everyone else only reaches the shop job and jobs assigned to their name
       const mine = manager ? {} : { $or: [{ shop: true }, { assignedTo: k.label }] };
+      const [, route, id, sub] = url.pathname.split('/');
+      const _id = /^[0-9a-f]{24}$/.test(id) && new ObjectId(id);
+
+      // photos sit in the bucket as <db>/<job>/<id>.jpg and <id>-t.jpg (the small one); src keeps the db, so dev shows prod's copied photos.
+      // you see a photo only if you see its job. names never get reused, so phones keep them for good
+      if (route === 'photo' && _id && req.method === 'GET') {
+        const [, pid, t = ''] = /^([0-9a-f]{8})(-t)?\.jpg$/.exec(sub) || [];
+        const j = pid && await jobs.findOne({ _id, ...mine }, { projection: { photos: { $elemMatch: { id: pid } } } });
+        if (!j || !j.photos) return res.writeHead(404).end();
+        const r = await gcs(`${j.photos[0].src}${t}.jpg`);
+        return res.writeHead(200, { 'Content-Type': 'image/jpeg', 'Cache-Control': 'private, max-age=31536000, immutable' }).end(Buffer.from(await r.arrayBuffer()));
+      }
+      // the phone sends the small jpeg then the big one in one body; x-thumb says where the small one ends
+      if (route === 'job' && _id && sub === 'photo' && req.method === 'POST') {
+        if (!await jobs.countDocuments({ _id, ...mine })) return res.writeHead(404).end();
+        const chunks = [];
+        let size = 0;
+        for await (const chunk of req) if ((size += chunk.length) > 4e6) return res.writeHead(413).end(); else chunks.push(chunk);
+        const all = Buffer.concat(chunks), n = +req.headers['x-thumb'], jpg = (b) => b.length > 3 && b[0] === 0xff && b[1] === 0xd8;
+        const small = all.subarray(0, n), big = all.subarray(n);
+        if (!jpg(small) || !jpg(big)) return res.writeHead(400).end();
+        const pid = crypto.randomBytes(4).toString('hex'), src = `${process.env.MONGODB_DB}/${id}/${pid}`;
+        await Promise.all([gcs(`${src}-t.jpg`, small), gcs(`${src}.jpg`, big)]);
+        await jobs.updateOne({ _id }, { $push: { photos: { id: pid, src, by: k.label, at: new Date() } } });
+        return res.writeHead(303, { Location: `/job/${id}${c.q}` }).end();
+      }
+
       // nav badges: jobs opened in the last 24h, and parts still needed on open jobs
       const [fresh, [need]] = await Promise.all([
         jobs.countDocuments({ shop: false, doneAt: null, inAt: { $gt: new Date(Date.now() - 864e5) }, ...mine }),
@@ -554,7 +639,6 @@ async function serve(db) {
       if (/^\d{4}-\d{2}-\d{2}$/.test(inDay) && inDay !== f.get('in0') && inDay <= day(new Date()))
         set.inAt = inDay === day(new Date()) ? new Date() : new Date(`${inDay}T12:00:00-06:00`);
       if (f && manager && f.has('assignedTo')) set.assignedTo = text('assignedTo');
-      const [, route, id] = url.pathname.split('/');
 
       if (route === '' || route === 'jobs') {
         c.sort = url.searchParams.get('sort') === 'new';
@@ -637,8 +721,7 @@ async function serve(db) {
         return back(`/job/${insertedId}`);
       }
 
-      if (route !== 'job' || !/^[0-9a-f]{24}$/.test(id)) return res.writeHead(404).end();
-      const _id = new ObjectId(id);
+      if (route !== 'job' || !_id || sub) return res.writeHead(404).end();
       if (!f) {
         const [j, who] = await Promise.all([jobs.findOne({ _id, ...mine }), manager ? keys.distinct('label', { scopes: { $all: ['shop', 'crew'] } }) : []]);
         return j ? res.end(job({ ...c, id, who }, j)) : res.writeHead(404).end();
@@ -652,6 +735,8 @@ async function serve(db) {
       else if (op === 'part' && lid && PARTS.includes(val)) [filter, update] = [{ _id, 'parts.id': lid }, { $set: { 'parts.$.state': val, 'parts.$.changedBy': k.label, 'parts.$.changedAt': new Date() } }];
       else if (op === 'rmtodo' && lid) update = { $pull: { todo: { id: lid } } };
       else if (op === 'rmpart' && lid) update = { $pull: { parts: { id: lid } } };
+      // only off the job; the files stay in the bucket, so a mis-tap can be undone by hand
+      else if (op === 'rmphoto' && lid) update = { $pull: { photos: { id: lid } } };
       else if (op === 'add' && (arg === 'todo' || arg === 'part')) update = { $push: { [arg === 'todo' ? 'todo' : 'parts']: { $each: lines('text').map((s) => line(arg, s)) } } };
       else if (op === 'assign' && manager) [filter, update] = [{ _id, shop: false }, { $set: { assignedTo: f.get('a').slice(7, 47) } }];
       else if (op === 'save' && Object.keys(set).length) update = { $set: set };
