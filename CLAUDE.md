@@ -20,7 +20,9 @@ Ground-up rebuild, worked on in the `../rush-v2` worktree (branch `v2`). v1 stay
 
 - designed and tested at dev.rush.rxtm.net (Cloud Run service `rush-dev`, db `dev`)
 - launch: migrate v1 data into `prod`, deploy v2 as a new revision of service `rush` (rush.rxtm.net); v1 revision kept for rollback only
-- login: invite codes + db sessions (cookie), done inside the installed iPhone app
+- login: phone + password. An admin makes a login link (team page, share sheet), the person sets a password in Safari, then signs in again inside the installed home-screen app (it has its own cookies) with Keychain autofill. db sessions in an HttpOnly cookie, 90 days sliding
+- first admin / any link from the command line: `node server.js invite <name> <phone> [crew] [manager] [admin]` (`--env-file=.env.prod` for prod)
+- `npm test` runs `*.test.js` with `node:test`
 - data: people as `{ userId, name }`, `tasks` (optionally on a job), append-only `events`; customers stay text
 - files: server.js (routes), db.js, more as needed (pages.js, app.css, app.js, qr.js); tests with `node:test`
 
