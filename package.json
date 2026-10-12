@@ -6,6 +6,6 @@
     "mongodb": "7.6.0"
   },
   "scripts": {
-    "start": "node serve.js"
+    "start": "node server.js"
   }
 }

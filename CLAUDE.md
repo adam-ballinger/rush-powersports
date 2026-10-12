@@ -14,6 +14,16 @@ Shared todo list for Jonathan, Brad and Adam, phone first.
 Today Jonathan keeps it all in his head: projects, daily tasks, calls to make, tires to order, eBay todos.
 Next: eBay listing helper (Jonathan's most annoying weekly task).
 
+# v2 (this branch)
+
+Ground-up rebuild, worked on in the `../rush-v2` worktree (branch `v2`). v1 stays on `main` in `../rush-powersports` until launch.
+
+- designed and tested at dev.rush.rxtm.net (Cloud Run service `rush-dev`, db `dev`)
+- launch: migrate v1 data into `prod`, deploy v2 as a new revision of service `rush` (rush.rxtm.net); v1 revision kept for rollback only
+- login: invite codes + db sessions (cookie), done inside the installed iPhone app
+- data: people as `{ userId, name }`, `tasks` (optionally on a job), append-only `events`; customers stay text
+- files: server.js (routes), db.js, more as needed (pages.js, app.css, app.js, qr.js); tests with `node:test`
+
 # Philosophy
 
 - simplest possible thing
@@ -26,13 +36,16 @@ Next: eBay listing helper (Jonathan's most annoying weekly task).
 - commonjs
 - zero dependencies except `mongodb`, exact versions (.npmrc)
 - `.env` holds MONGODB_URI, MONGODB_DB (never committed)
-- database: Atlas cluster0, own `rush` / `rush-dev` databases and own db user
+- database: Atlas cluster0 (rush only): v2 uses `prod` / `dev`; v1 still uses `rush` / `rush-dev`
+- v2 db users: `.env` readWrite `dev` only; `.env.prod` readWrite `prod` only
 - hosting: Cloud Run service `rush`, GCP project resource-automation-61436, us-central1, at rush.rxtm.net (DNS in Squarespace)
 - deploy with gcloud from PowerShell (gcloud fails in Git Bash here)
-- db users: `.env` is `rush-dev` only (can't touch prod); `.env.prod` is all-access, use `node --env-file=.env.prod ...`; job uses `rush-backup` (read rush, readWrite rush-dev)
+- v1 db users: `.env` is `rush-dev` only (can't touch prod); `.env.prod` is all-access, use `node --env-file=.env.prod ...`; job uses `rush-backup` (read rush, readWrite rush-dev)
 - patterns to copy from ../welcome-pumpkin: keys with scopes, terminal-styled pages, Cloud Run deploy
 
 # Backups
+
+v1 only for now: `backup.js` lives on `main`. v2 needs its own backup for `prod` before launch.
 
 Atlas M0 has none, so `backup.js` runs nightly as Cloud Run Job `rush-backup` (Scheduler `rush-backup-nightly`, 2am Chicago).
 It saves prod to `gs://rush-backups-61436` (kept 90 days, create-only) and rebuilds `rush-dev` from that file: dev keys kept, phones faked.
