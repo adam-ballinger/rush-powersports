@@ -29,4 +29,16 @@ Next: eBay listing helper (Jonathan's most annoying weekly task).
 - database: Atlas cluster0, own `rush` / `rush-dev` databases and own db user
 - hosting: Cloud Run service `rush`, GCP project resource-automation-61436, us-central1, at rush.rxtm.net (DNS in Squarespace)
 - deploy with gcloud from PowerShell (gcloud fails in Git Bash here)
+- db users: `.env` is `rush-dev` only (can't touch prod); `.env.prod` is all-access, use `node --env-file=.env.prod ...`; job uses `rush-backup` (read rush, readWrite rush-dev)
 - patterns to copy from ../welcome-pumpkin: keys with scopes, terminal-styled pages, Cloud Run deploy
+
+# Backups
+
+Atlas M0 has none, so `backup.js` runs nightly as Cloud Run Job `rush-backup` (Scheduler `rush-backup-nightly`, 2am Chicago).
+It saves prod to `gs://rush-backups-61436` (kept 90 days, create-only) and rebuilds `rush-dev` from that file: dev keys kept, phones faked.
+A failed run emails Adam (alert "rush backup failed").
+
+Restore (PowerShell):
+1. `gcloud storage ls gs://rush-backups-61436` then `gcloud storage cp gs://rush-backups-61436/<file> backups/`
+2. try it first: `node --env-file=.env.prod backup.js restore backups/<file> rush-restore-test`
+3. for real: `node --env-file=.env.prod backup.js restore backups/<file> rush --prod` (replaces everything in prod, keys included)
