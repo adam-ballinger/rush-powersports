@@ -279,7 +279,7 @@ const page = (c, title, body) => `<!doctype html><meta charset="utf-8"><meta nam
 <meta name="twitter:card" content="summary_large_image">
 <link rel="icon" href="${tabIcon}"><link rel="apple-touch-icon" href="/icon-bars.png"><style>${css}</style><main>
 <h1>Rush Powersports</h1><header>
-<nav>${[['jobs', '/jobs', c.fresh ? ` <sup>${c.fresh}</sup>` : ''], ['parts', '/parts', c.need ? ` <sup>${c.need}</sup>` : ''], ['issues', '/issues', ''], ...(c.manager ? [['backlog', '/backlog', '']] : []), ...(c.manager || c.admin ? [['team', c.admin ? '/keys' : '/team', '']] : [])]
+<nav>${[['jobs', '/jobs', c.fresh ? ` <sup>${c.fresh}</sup>` : ''], ['parts', '/parts', c.need ? ` <sup>${c.need}</sup>` : ''], ['issues', '/issues', ''], ...(c.manager ? [['backlog', '/backlog', '']] : []), ['production', '/production', ''], ...(c.manager || c.admin ? [['team', c.admin ? '/keys' : '/team', '']] : [])]
     .map(([t, href, sup]) => `<a href="${href}${c.q}"${c.tab === t ? ' class="on"' : ''}>${t}${sup}</a>`).join('')}</nav></header>
 ${body}
 <footer><div>${logo} <b>Resource Automation</b></div>
@@ -402,6 +402,46 @@ const backlogPage = (c, open, all) => {
 <h2>Oldest</h2><div class="card list"><ul>${open.slice(0, 5).map((j) => `<li><span><a href="/job/${j._id}${c.q}">${esc(name(j))}</a></span><b class="n">${days(j.inAt, new Date())}</b></li>`).join('') || '<li class="dim">nothing open</li>'}</ul></div>`);
 };
 
+// what got finished each day, newest first. managers see everyone's, everyone else only their own. a job counts on the day it was marked done (for whoever marked it done; older jobs fall back to who it is assigned to),
+// a task on the day it was last ticked (changedAt moves on every tap, so un-ticking removes it). shop-job tasks count too
+const DAYS = 14;
+const productionPage = (c, all, now) => {
+  const today = Date.parse(day(now)), since = day(new Date(today - (DAYS - 1) * 864e5));
+  const by = {};
+  const add = (d, kind, e) => { if (d >= since && (c.manager || e.who === c.k.label)) (by[d] ||= { job: [], task: [] })[kind].push(e); };
+  for (const j of all) {
+    if (!j.shop && j.doneAt) add(day(j.doneAt), 'job', { j, who: j.completedBy || j.assignedTo || 'nobody' });
+    for (const t of j.todo) if (t.done && t.changedAt) add(day(t.changedAt), 'task', { j, t, who: t.changedBy || 'nobody' });
+  }
+  const ds = [...Array(DAYS)].map((_, i) => new Date(today - i * 864e5).toISOString().slice(0, 10));
+  const count = (n, k) => `${n} ${k}${n === 1 ? '' : 's'}`;
+  const total = (n) => ['job', 'task'].map((k) => count(ds.slice(0, n).reduce((a, d) => a + (by[d] ? by[d][k].length : 0), 0), k)).join(' and ');
+  const label = (d) => `${new Date(`${d}T12:00:00Z`).toLocaleDateString('en-US', { weekday: 'short', timeZone: 'UTC' })} ${+d.slice(5, 7)}/${+d.slice(8)}`;
+  // columns side by side per day, oldest on the left; tap or hover a day to read it (the backlog chart's #tip)
+  const chart = () => {
+    const W = 600, H = 200, h = ds.map((d) => ({ d, a: by[d] ? by[d].job.length : 0, b: by[d] ? by[d].task.length : 0 })).reverse();
+    const max = Math.max(1, ...h.map((x) => Math.max(x.a, x.b))), slot = W / h.length, w = Math.max(1, slot / 2 - 2);
+    const tip = (x) => `${label(x.d)}: ${count(x.a, 'job')}, ${count(x.b, 'task')}`;
+    const bar = (X, n, fill) => n ? `<rect x="${X}" y="${H - n / max * H}" width="${w}" height="${n / max * H}" rx="1" fill="${fill}"/>` : '';
+    const cols = h.map((x, i) => `<g data-tip="${tip(x)}"><rect x="${i * slot}" width="${slot}" height="${H}" fill="transparent"/>${bar(i * slot + 1, x.a, UNDER)}${bar(i * slot + slot / 2 + 1, x.b, OVER)}</g>`).join('');
+    return `<div class="card"><div class="axis"><span><i class="sw" style="background:${UNDER}"></i>jobs <i class="sw" style="background:${OVER}"></i>tasks</span><span>max ${max}</span></div>
+<svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="jobs and tasks done per day"><line x1="0" x2="${W}" y1="${H - 0.5}" y2="${H - 0.5}" stroke="var(--line)"/>${cols}</svg>
+<div class="axis"><span>${label(h[0].d)}</span><span>today</span></div><div id="tip">${tip(h[h.length - 1])}</div></div>`;
+  };
+  const people = (x) => [...new Set([...x.job, ...x.task].map((e) => e.who))].sort().map((w) => {
+    const a = x.job.filter((e) => e.who === w).length, b = x.task.filter((e) => e.who === w).length;
+    return `${esc(w)} ${[a && count(a, 'job'), b && count(b, 'task')].filter(Boolean).join(', ')}`;
+  }).join(' · ');
+  return page(c, 'Production', `<h2>Production</h2>
+<p class="dim">${total(7)} done in last 7 days</p>
+${chart()}
+<div class="cards">${ds.map((d) => {
+    const x = by[d];
+    if (!x) return `<div class="card dim"><div class="top"><b>${label(d)}</b><span>nothing done</span></div></div>`;
+    return `<div class="card"><div class="top"><b>${label(d)}</b><span>${[x.job.length && count(x.job.length, 'job'), x.task.length && count(x.task.length, 'task')].filter(Boolean).join(' · ')}</span></div>
+${c.manager ? `<div class="dim">${people(x)}</div>` : ''}<ul>${x.job.map(({ j, who }) => `<li><span><a class="c" href="/job/${j._id}${c.q}">${esc(name(j))}</a></span><small>${esc(who)}</small></li>`).join('')}${x.task.map(({ j, t, who }) => `<li class="done"><span>${esc(t.text)}${j.shop ? '' : ` <a class="dim" href="/job/${j._id}${c.q}">${esc(name(j))}</a>`}</span><small>${esc(who)}</small></li>`).join('')}</ul></div>`;
+  }).join('\n')}</div>`);
+};
 
 // every part on open jobs; each button posts to its own job, then the server sends us back here with the same filter
 const partsPage = (c, rows, counts, state) => page(c, 'Parts', `<h2>Open Parts</h2>
@@ -655,6 +695,11 @@ async function serve(db) {
         const all = await jobs.find({ shop: { $ne: true }, $or: [{ doneAt: null }, { doneAt: { $gte: new Date(Date.now() - 91 * 864e5) } }] }).sort({ inAt: 1 }).toArray();
         return res.end(backlogPage({ ...c, tab: 'backlog' }, all.filter((j) => !j.doneAt), all));
       }
+      if (route === 'production') {
+        // jobs finished or tasks ticked in the last DAYS days, plus a day extra so shop-time edges are covered
+        const from = new Date(Date.now() - (DAYS + 1) * 864e5);
+        return res.end(productionPage({ ...c, tab: 'production' }, await jobs.find({ $or: [{ doneAt: { $gte: from } }, { 'todo.changedAt': { $gte: from } }], ...mine }).toArray(), new Date()));
+      }
       if (route === 'parts') {
         const state = PARTS.includes(url.searchParams.get('state')) ? url.searchParams.get('state') : '';
         const all = (await jobs.find({ doneAt: null, ...mine }).sort({ shop: -1, inAt: 1 }).toArray())
@@ -740,7 +785,7 @@ async function serve(db) {
       else if (op === 'add' && (arg === 'todo' || arg === 'part')) update = { $push: { [arg === 'todo' ? 'todo' : 'parts']: { $each: lines('text').map((s) => line(arg, s)) } } };
       else if (op === 'assign' && manager) [filter, update] = [{ _id, shop: false }, { $set: { assignedTo: f.get('a').slice(7, 47) } }];
       else if (op === 'save' && Object.keys(set).length) update = { $set: set };
-      else if (op === 'done') [filter, update] = [{ _id, shop: false }, { $set: { ...set, doneAt: arg === '1' ? new Date() : null } }];
+      else if (op === 'done') [filter, update] = [{ _id, shop: false }, { $set: { ...set, doneAt: arg === '1' ? new Date() : null, completedBy: arg === '1' ? k.label : null } }];
       if (update) await jobs.updateOne({ ...filter, ...mine }, update);
       if (f.get('to') === 'parts') return res.writeHead(303, { Location: `/parts${c.q}${PARTS.includes(f.get('state')) ? `&state=${f.get('state')}` : ''}` }).end();
       back(op === 'done' && arg === '1' ? '/jobs' : `/job/${id}`);
