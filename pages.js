@@ -83,7 +83,37 @@ footer b{color:var(--fg);font-weight:normal}
 .hero i{font-style:normal}
 .hero .m{color:#ff3fb4;text-shadow:0 0 .6em #ff3fb4}.hero .y{color:#f2b705;text-shadow:0 0 .6em #f2b705}.hero .c{color:#12b5c4;text-shadow:0 0 .6em #12b5c4}
 .hero .d{color:#6a6a6a}.hero .dd{color:#333}.hero .tf{color:#3a3a3a}.hero .g{color:#b5b2aa;text-shadow:0 0 .4em rgba(246,244,239,.3)}
-.hero .t{color:#f6f4ef;text-shadow:0 0 .5em rgba(246,244,239,.5)}`;
+.hero .t{color:#f6f4ef;text-shadow:0 0 .5em rgba(246,244,239,.5)}
+/* charts: every color is a role on .chart, so a chart is recolored in one place. its own scheme (the dataviz palette's dark steps)
+   apart from the app's cyan, on a dark panel so charts read as their own surface; marks wear --series, text only wears the inks. small system sans, not the mono the rest of the app uses */
+.chart{color-scheme:dark;--surface:#1a1a19;--ink:#f0efec;--ink2:#c3c2b7;--muted:#898781;--grid:#2c2c2a;--axis:#383835;--series:#3987e5;--tip:#f0efec;--on-tip:#1a1a19;
+  margin:0 0 var(--s4);background:var(--surface);border-color:rgba(255,255,255,.10);font:12px/1.4 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;color:var(--ink2)}
+.chart figcaption{margin-bottom:var(--s4);display:flex;flex-wrap:wrap;gap:0 var(--s2);align-items:baseline}
+.chart figcaption b{font-size:13px;font-weight:600;color:var(--ink)}
+.chart figcaption span{color:var(--muted)}
+.plot{position:relative;height:140px;margin:0 0 0 28px}
+.plot .grid{position:absolute;left:0;right:0;border-top:1px solid var(--grid)}
+.plot .grid.base{border-color:var(--axis)}
+.plot .grid span{position:absolute;white-space:nowrap;right:calc(100% + 8px);top:-.7em;color:var(--muted);font-variant-numeric:tabular-nums}
+.cols,.xs{display:flex;position:relative}
+.cols{height:100%}
+.col{flex:1;position:relative;display:flex;align-items:flex-end;justify-content:center;padding:0 1px;outline-offset:-1px}
+.col i{font-style:normal;display:block;position:relative;width:100%;max-width:24px;height:var(--h);background:var(--series);border-radius:4px 4px 0 0;transition:opacity .15s}
+.col:hover i,.col:focus i{opacity:.75}
+.col i b{white-space:nowrap;position:absolute;bottom:calc(100% + 3px);left:50%;transform:translateX(-50%);font-weight:500;color:var(--ink)}
+.xs{margin:var(--s2) 0 0 28px;height:16px}
+.xs span{flex:1;position:relative}
+.xs span b{position:absolute;left:50%;transform:translateX(-50%);font-weight:400;color:var(--muted);white-space:nowrap}
+/* tooltip: value first, then the date; on hover and keyboard focus, flipped inward at the edges so it never leaves the card */
+.tip{display:none;position:absolute;bottom:calc(var(--h) + 22px);left:50%;transform:translateX(-50%);z-index:1;padding:var(--s1) var(--s2);background:var(--tip);color:var(--on-tip);border-radius:6px;white-space:nowrap;pointer-events:none}
+.tip b{font-weight:600}.tip span{opacity:.7}
+.col:hover .tip,.col:focus .tip{display:block}
+.col.l .tip{left:0;transform:none}.col.r .tip{left:auto;right:0;transform:none}
+.chart details{margin-top:var(--s4)}
+.chart summary{display:block;padding:0;color:var(--muted)}
+.chart summary::after,.chart details[open] summary::after{content:"";}
+.chart summary::before{content:"▸ "}.chart details[open] summary::before{content:"▾ "}
+.chart li{padding:6px 0;border-color:var(--grid)}`;
 
 // runs in the browser: the home page hero, the share sheet where there is one (phones), copy everywhere
 function browser() {
@@ -172,7 +202,7 @@ const tabIcon = `data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://www
 // sections, each with its pages; urls are /<section>/<page>. can() hides what someone can't use (no can: everyone),
 // so adding a page is one line here plus its route in server.js
 const NAV = [
-  { id: 'account', label: 'Account', pages: [{ id: 'home', label: 'Home' }, { id: 'issues', label: 'Issues' }, { id: 'profile', label: 'Profile' }] },
+  { id: 'account', label: 'Account', pages: [{ id: 'home', label: 'Home' }, { id: 'issues', label: 'Issues' }, { id: 'sessions', label: 'Sessions' }, { id: 'profile', label: 'Profile' }] },
   { id: 'admin', label: 'Admin', can: 'admin', pages: [
     { id: 'users', label: 'Users' }, { id: 'sessions', label: 'Sessions' }, { id: 'invites', label: 'Invites' }, { id: 'events', label: 'Events' }] },
 ];
@@ -281,12 +311,34 @@ const inviteBox = (link) => `<h2>Login link for ${esc(link.name)}</h2><div class
 const user = (c, u) => {
   const own = String(u._id) === String(c.user._id);
   const status = u.hash ? '' : u.invite ? `<div class="y">login link open until ${day(u.invite.expiresAt)}</div>` : '<div class="m">no password yet</div>';
-  return `<form method="post" action="/admin/users" class="card"><b>${esc(u.name)}</b> <span class="dim">${esc(showPhone(u.phone))}${own ? ' · you' : ''}</span>${status}
+  const locked = u.lockedUntil > new Date() ? '<div class="m">locked</div>' : '';
+  return `<form method="post" action="/admin/users" class="card"><b><a href="/admin/users/${u._id}">${esc(u.name)}</a></b> <span class="dim">${esc(showPhone(u.phone))}${own ? ' · you' : ''}</span>${status}${locked}
 <div class="row">${ROLES.map((r) => {
     const on = u.roles.includes(r);
     return `<button class="tag ${on ? 'c' : 'dim'}" name="a" value="role:${u._id}:${r}:${on ? 0 : 1}"${own ? ' disabled' : ''}>${on ? '[x]' : '[ ]'} ${r}</button>`;
   }).join('')}</div>
 <div class="row"><button name="a" value="invite:${u._id}">↗ ${u.hash ? 'new login link' : 'login link'}</button>${own ? '' : `<button name="a" value="remove:${u._id}">× remove</button>`}</div></form>`;
+};
+
+const clock = (d) => d.toLocaleTimeString('en-US', { timeZone: 'America/Chicago', hour: 'numeric', minute: '2-digit' });
+
+// Admin → Users → one person
+const person = (c, u, ss, link) => {
+  const own = String(u._id) === String(c.user._id), locked = u.lockedUntil > new Date();
+  const status = [u.disabledAt && 'removed', !u.hash && 'no password yet', locked && `locked until ${clock(u.lockedUntil)}`, u.fails > 0 && `${u.fails} wrong tries`].filter(Boolean).join(' · ');
+  return page({ ...c, at: 'admin/users' }, u.name, `${link ? inviteBox(link) : ''}${error(c.msg)}
+<form method="post" action="/admin/users/${u._id}" class="card">
+<label>name<input name="name" maxlength="40" required value="${esc(u.name)}"></label>
+<label>phone<input name="phone" type="tel" inputmode="tel" required value="${esc(showPhone(u.phone))}"></label>
+<div class="row"><button name="a" value="save">↵ save</button></div>
+${status ? `<p class="m">${status}</p>` : ''}
+<div class="row">${ROLES.map((r) => {
+    const on = u.roles.includes(r);
+    return `<button class="tag ${on ? 'c' : 'dim'}" name="a" value="role:${u._id}:${r}:${on ? 0 : 1}"${own ? ' disabled' : ''}>${on ? '[x]' : '[ ]'} ${r}</button>`;
+  }).join('')}</div>
+<div class="row">${u.disabledAt ? '' : `<button name="a" value="invite:${u._id}">↗ ${u.hash ? 'new login link' : 'login link'}</button>`}${locked || u.fails > 0 ? `<button name="a" value="unlock:${u._id}">↺ unlock</button>` : ''}${own ? '' : u.disabledAt ? `<button name="a" value="restore:${u._id}">↺ restore</button><button name="a" value="delete:${u._id}">× delete for good</button>` : `<button name="a" value="remove:${u._id}">× remove</button>`}</div></form>
+<h2>Signed in</h2><div class="card"><ul>${ss.map((s) => `<li><span><a href="/admin/sessions/${s._id}">${esc(s.device)}</a> <span class="dim">seen ${ago(s.seenAt)} · since ${day(s.createdAt)}</span></span></li>`).join('') || '<li class="dim">no phones</li>'}</ul></div>
+<p><a href="/admin/users">← users</a></p>`);
 };
 
 const users = (c, all, link) => {
@@ -302,6 +354,12 @@ ${removed.length ? `<h2>Removed</h2><form method="post" action="/admin/users" cl
 
 // one row per item in a card, with an × button on the right when the row can be acted on
 const list = (action, rows, empty) => `<form method="post" action="${action}" class="card"><ul>${rows.map(([text, x]) => `<li><span>${text}</span>${x ? `<button class="tag dim" name="a" value="${x}" aria-label="remove">×</button>` : ''}</li>`).join('') || `<li class="dim">${empty}</li>`}</ul></form>`;
+
+// Account → Sessions: your own signed-in phones. yours has no ×: use sign out
+const mySessions = (c, all) => page({ ...c, at: 'account/sessions' }, 'Sessions', list('/account/sessions', all.map((s) => {
+  const mine = String(s._id) === String(c.session._id);
+  return [`${esc(s.device)} <span class="dim">seen ${ago(s.seenAt)} · since ${day(s.createdAt)}${mine ? ' · this one' : ''}</span>`, !mine && `revoke:${s._id}`];
+}), 'nothing') + '<p class="dim">× signs a phone out.</p>');
 
 // every signed-in phone, last used first. yours has no ×: use sign out
 const sessions = (c, all, who) => page({ ...c, at: 'admin/sessions' }, 'Sessions', list('/admin/sessions', all.map((s) => {
@@ -356,11 +414,36 @@ const said = (e, who) => {
     cancel: `${by} cancelled ${them}'s login link`,
     name: `${esc(e.from)} changed their name to ${esc(e.to)}`,
     phone: `${them} changed their phone`,
+    rename: `${by} renamed ${esc(e.from)} to ${esc(e.to)}`,
+    'set phone': `${by} changed ${them}'s phone`,
+    unlock: `${by} unlocked ${them}`,
+    delete: `${by} deleted ${esc(e.name)} for good`,
     'password change': `${them} changed their password`,
   }[e.what] || `${by}: ${esc(e.what)}`;
 };
-const events = (c, all, who) => page({ ...c, at: 'admin/events' }, 'Events', `
+// a column chart, the template for the other charts. rows is [[label, value, tooltip date]], oldest first; the title names the
+// single series, so there's no legend. thin columns (24px at most) with a rounded top and a 2px gap, hairline grid, y ticks at
+// clean numbers, the peak labeled on its cap, a hover/focus tooltip on each column (its whole height is the target), a table view
+// for the same numbers, and a label every 7th column
+const columnChart = ({ title, sub, unit, rows }) => {
+  const max = Math.max(...rows.map((r) => r[1]), 0);
+  let top = 2; // 2, 4, 10, 20, 40, 100, ...: a clean top with a clean middle
+  for (let p = 1; top < max; p *= 10) top = [2, 4, 10].map((s) => s * p).find((s) => s >= max) || top;
+  const peak = rows.findIndex((r) => r[1] === max && max > 0), last = rows.length - 1, cell = (i) => (last - i) % 7 === 0;
+  const grid = [[0, 'base'], [top / 2, ''], [top, '']].map(([v, cls]) => `<div class="grid ${cls}" style="bottom:${v / top * 100}%"><span>${v}</span></div>`).join('');
+  const cols = rows.map(([label, v, date], i) => `<div class="col${i < 4 ? ' l' : i > last - 4 ? ' r' : ''}" tabindex="0" style="--h:${v / top * 100}%"><i${v ? '' : ' hidden'}>${i === peak ? `<b>${v}</b>` : ''}</i><span class="tip"><b>${v}</b> <span>${esc(unit)} · ${esc(date)}</span></span></div>`).join('');
+  const xs = rows.map(([label], i) => `<span>${cell(i) ? `<b>${esc(label)}</b>` : ''}</span>`).join('');
+  return `<figure class="chart card"><figcaption><b>${esc(title)}</b> <span class="dim">${esc(sub)}</span></figcaption>
+<div class="plot">${grid}<div class="cols">${cols}</div></div><div class="xs">${xs}</div>
+<details><summary>table</summary><ul>${rows.slice().reverse().map(([, v, date]) => `<li><span>${esc(date)}</span><span>${v}</span></li>`).join('')}</ul></details></figure>`;
+};
+
+const events = (c, all, who, days) => page({ ...c, at: 'admin/events' }, 'Events', `
+${columnChart({
+  title: 'Events per day', unit: 'events', sub: `last 30 days · ${days.reduce((a, d) => a + d[1], 0)} total`,
+  rows: days.map(([k, n]) => { const d = new Date(k + 'T12:00Z'); return [d.toLocaleDateString('en-US', { timeZone: 'UTC', month: 'numeric', day: 'numeric' }), n, d.toLocaleDateString('en-US', { timeZone: 'UTC', weekday: 'short', month: 'numeric', day: 'numeric' })]; }),
+})}
 <div class="card"><ul>${all.map((e) => `<li><span>${said(e, who)}</span><time class="dim">${ago(e.at)}</time></li>`).join('') || '<li class="dim">nothing yet</li>'}</ul></div>
 ${all.length === 100 ? '<p class="dim">the last 100.</p>' : ''}`);
 
-module.exports = { icon, manifest, landing, login, invite, inviteGone, invited, home, profile, users, sessions, session, issues, issue, invites, events };
+module.exports = { icon, manifest, landing, login, invite, inviteGone, invited, home, profile, users, person, mySessions, sessions, session, issues, issue, invites, events };

@@ -61,37 +61,12 @@ const names = async () => {
   return (id) => m.get(String(id)) || 'someone';
 };
 
-async function users(req, res, c, f) {
-  const by = { userId: c.user._id, name: c.user.name };
-  const show = async (link, msg, status = 200) => {
-    const [all, invites] = await Promise.all([db.users.find().sort({ createdAt: 1 }).toArray(), db.invites.find({ expiresAt: { $gt: new Date() } }).toArray()]);
-    for (const u of all) u.invite = invites.find((i) => i.userId.equals(u._id));
-    html(res, pages.users({ ...c, msg }, all, link), status);
-  };
-  if (!f) return show();
-  const linkFor = async (user) => ({ name: user.name, url: `${c.origin}/invite/${await db.createInvite(user._id, by)}` });
+// a fresh login link for someone; shown once
+const linkFor = async (c, by, user) => ({ name: user.name, url: `${c.origin}/invite/${await db.createInvite(user._id, by)}` });
 
-  const [op, id, role, on] = (f.get('a') || '').split(':');
-  if (op === 'add') {
-    const name = (f.get('name') || '').trim().slice(0, 40), phone = auth.phone(f.get('phone'));
-    if (!name || !phone) return show(null, 'type a name and a 10 digit phone number.', 400);
-    const user = { name, phone, roles: [], hash: null, fails: 0, lockedUntil: null, createdAt: new Date(), createdBy: by, disabledAt: null };
-    try { user._id = (await db.users.insertOne(user)).insertedId; } catch (e) {
-      if (e.code === 11000) return show(null, `${auth.showPhone(phone)} is already a user${(await db.users.findOne({ phone })).disabledAt ? ', under removed' : ''}.`, 409);
-      throw e;
-    }
-    await db.logEvent(by, 'invite', user._id);
-    return show(await linkFor(user));
-  }
-  if (!ID.test(id)) return go(res, '/admin/users');
-  const _id = new db.ObjectId(id), user = await db.users.findOne({ _id });
-  if (!user) return go(res, '/admin/users');
-  if (op === 'invite' && !user.disabledAt) {
-    await db.logEvent(by, 'invite', _id);
-    return show(await linkFor(user));
-  }
-  // everything below changes someone else, never yourself
-  if (_id.equals(c.user._id)) return go(res, '/admin/users');
+// role, remove, restore, unlock, delete on someone else (the caller makes sure it isn't you)
+async function act(by, user, op, role, on) {
+  const _id = user._id;
   if (op === 'role' && auth.ROLES.includes(role)) {
     await db.users.updateOne({ _id }, on === '1' ? { $addToSet: { roles: role } } : { $pull: { roles: role } });
     await db.logEvent(by, 'roles', _id, { role, on: on === '1' });
@@ -105,8 +80,80 @@ async function users(req, res, c, f) {
     await db.users.updateOne({ _id }, { $set: { disabledAt: null } });
     await db.logEvent(by, 'restore', _id);
   }
+  if (op === 'unlock') {
+    await db.users.updateOne({ _id }, { $set: { fails: 0, lockedUntil: null } });
+    await db.logEvent(by, 'unlock', _id);
+  }
+  // only a removed person can be deleted for good; their events stay, under "someone"
+  if (op === 'delete' && user.disabledAt) {
+    await Promise.all([db.users.deleteOne({ _id }), db.sessions.deleteMany({ userId: _id }), db.invites.deleteMany({ userId: _id })]);
+    await db.logEvent(by, 'delete', _id, { name: user.name });
+  }
   db.forget();
+}
+
+async function users(req, res, c, f) {
+  const by = { userId: c.user._id, name: c.user.name };
+  const show = async (link, msg, status = 200) => {
+    const [all, invites] = await Promise.all([db.users.find().sort({ createdAt: 1 }).toArray(), db.invites.find({ expiresAt: { $gt: new Date() } }).toArray()]);
+    for (const u of all) u.invite = invites.find((i) => i.userId.equals(u._id));
+    html(res, pages.users({ ...c, msg }, all, link), status);
+  };
+  if (!f) return show();
+
+  const [op, id, role, on] = (f.get('a') || '').split(':');
+  if (op === 'add') {
+    const name = (f.get('name') || '').trim().slice(0, 40), phone = auth.phone(f.get('phone'));
+    if (!name || !phone) return show(null, 'type a name and a 10 digit phone number.', 400);
+    const user = { name, phone, roles: [], hash: null, fails: 0, lockedUntil: null, createdAt: new Date(), createdBy: by, disabledAt: null };
+    try { user._id = (await db.users.insertOne(user)).insertedId; } catch (e) {
+      if (e.code === 11000) return show(null, `${auth.showPhone(phone)} is already a user${(await db.users.findOne({ phone })).disabledAt ? ', under removed' : ''}.`, 409);
+      throw e;
+    }
+    await db.logEvent(by, 'invite', user._id);
+    return show(await linkFor(c, by, user));
+  }
+  if (!ID.test(id)) return go(res, '/admin/users');
+  const _id = new db.ObjectId(id), user = await db.users.findOne({ _id });
+  if (!user) return go(res, '/admin/users');
+  if (op === 'invite' && !user.disabledAt) {
+    await db.logEvent(by, 'invite', _id);
+    return show(await linkFor(c, by, user));
+  }
+  // everything below changes someone else, never yourself
+  if (_id.equals(c.user._id)) return go(res, '/admin/users');
+  await act(by, user, op, role, on);
   go(res, '/admin/users');
+}
+
+// one person: change name and phone, roles, login link, remove / restore / delete, unlock. you can't change your own roles or remove yourself
+async function person(res, c, id, f) {
+  const u = ID.test(id) && await db.users.findOne({ _id: new db.ObjectId(id) });
+  if (!u) return go(res, '/admin/users');
+  const by = { userId: c.user._id, name: c.user.name }, own = u._id.equals(c.user._id);
+  const show = async (link, msg, status = 200) => {
+    const [fresh, ss] = await Promise.all([db.users.findOne({ _id: u._id }), db.sessions.find({ userId: u._id, expiresAt: { $gt: new Date() } }).sort({ seenAt: -1 }).toArray()]);
+    html(res, pages.person({ ...c, msg }, fresh, ss, link), status);
+  };
+  if (!f) return show();
+  const [op, , role, on] = (f.get('a') || '').split(':');
+  if (op === 'save') {
+    const name = (f.get('name') || '').trim().slice(0, 40), phone = auth.phone(f.get('phone'));
+    if (!name || !phone) return show(null, 'type a name and a 10 digit phone number.', 400);
+    try { await db.users.updateOne({ _id: u._id }, { $set: { name, phone } }); } catch (e) {
+      if (e.code === 11000) return show(null, `${auth.showPhone(phone)} belongs to someone else.`, 409);
+      throw e;
+    }
+    if (name !== u.name) await db.logEvent(by, 'rename', u._id, { from: u.name, to: name });
+    if (phone !== u.phone) await db.logEvent(by, 'set phone', u._id);
+    db.forget();
+  }
+  if (op === 'invite' && !u.disabledAt) {
+    await db.logEvent(by, 'invite', u._id);
+    return show(await linkFor(c, by, u));
+  }
+  if (!own || op === 'unlock') await act(by, u, op, role, on);
+  go(res, op === 'delete' && !own && u.disabledAt ? '/admin/users' : '/admin/users/' + id);
 }
 
 // every signed-in phone; × signs it out (yours can't be, use sign out)
@@ -160,6 +207,18 @@ async function issue(res, c, id, f) {
   html(res, pages.issue(c, i));
 }
 
+// your own signed-in phones; × signs one out (this one can't be, use sign out)
+async function mySessions(req, res, c, f) {
+  const [op, id] = f ? (f.get('a') || '').split(':') : [];
+  if (op === 'revoke' && ID.test(id) && id !== String(c.session._id)) {
+    const s = await db.sessions.findOneAndDelete({ _id: new db.ObjectId(id), userId: c.user._id });
+    if (s) await db.logEvent({ userId: c.user._id, name: c.user.name }, 'revoke', c.user._id, { device: s.device });
+    db.forget();
+  }
+  if (f) return go(res, '/account/sessions');
+  html(res, pages.mySessions(c, await db.sessions.find({ userId: c.user._id, expiresAt: { $gt: new Date() } }).sort({ seenAt: -1 }).toArray()));
+}
+
 // login links not used yet; × cancels one so it stops working
 async function invites(req, res, c, f) {
   const [op, id] = f ? (f.get('a') || '').split(':') : [];
@@ -209,8 +268,18 @@ async function profile(req, res, c, f) {
 }
 
 async function events(res, c) {
-  const [all, who] = await Promise.all([db.events.find().sort({ at: -1 }).limit(100).toArray(), names()]);
-  html(res, pages.events(c, all, who));
+  // events per day for the last 30 days (Chicago days, today last), zeros included
+  const base = Date.parse(new Date().toLocaleDateString('en-CA', { timeZone: 'America/Chicago' }));
+  const [all, who, perDay] = await Promise.all([
+    db.events.find().sort({ at: -1 }).limit(100).toArray(), names(),
+    db.events.aggregate([
+      { $match: { at: { $gte: new Date(base - 32 * 864e5) } } },
+      { $group: { _id: { $dateToString: { format: '%Y-%m-%d', date: '$at', timezone: 'America/Chicago' } }, n: { $sum: 1 } } },
+    ]).toArray(),
+  ]);
+  const n = new Map(perDay.map((d) => [d._id, d.n]));
+  const days = [...Array(30)].map((_, i) => { const k = new Date(base - (29 - i) * 864e5).toISOString().slice(0, 10); return [k, n.get(k) || 0]; });
+  html(res, pages.events(c, all, who, days));
 }
 
 async function serve() {
@@ -247,8 +316,10 @@ async function serve() {
       if (route === 'account' && arg === 'home' && !f) return html(res, pages.home(c));
       if (route === 'account' && arg === 'issues' && sub) return await issue(res, c, sub, f);
       if (route === 'account' && arg === 'issues') return await issues(req, res, c, f);
+      if (route === 'account' && arg === 'sessions') return await mySessions(req, res, c, f);
       if (route === 'account' && arg === 'profile') return await profile(req, res, c, f);
       if (route === 'admin' && auth.can(c.user, 'admin')) {
+        if (arg === 'users' && sub) return await person(res, c, sub, f);
         if (arg === 'users') return await users(req, res, c, f);
         if (arg === 'sessions' && sub && !f) return await session(res, c, sub);
         if (arg === 'sessions') return await sessions(req, res, c, f);
