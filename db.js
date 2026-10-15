@@ -14,7 +14,7 @@ if (!process.env.MONGODB_URI || !process.env.MONGODB_DB) {
 const name = process.env.MONGODB_DB;
 const client = new MongoClient(process.env.MONGODB_URI, { minPoolSize: 2 }); // warm connections so parallel queries skip the handshake
 const db = client.db(name);
-const users = db.collection('users'), invites = db.collection('invites'), sessions = db.collection('sessions'), events = db.collection('events');
+const users = db.collection('users'), invites = db.collection('invites'), sessions = db.collection('sessions'), events = db.collection('events'), issues = db.collection('issues');
 const DAY = 864e5;
 
 // expiresAt indexes are TTL: mongo deletes those docs on its own, within a minute or so of expiring
@@ -29,6 +29,7 @@ async function connect() {
     sessions.createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 }),
     sessions.createIndex({ userId: 1 }),
     events.createIndex({ at: -1 }),
+    issues.createIndex({ doneAt: 1, at: -1 }),
   ]);
 }
 
@@ -75,7 +76,7 @@ const useInvite = (invite) => invites.findOneAndDelete({ _id: invite._id });
 const logEvent = (by, what, userId, more = {}) => events.insertOne({ at: new Date(), by, what, userId, ...more });
 
 module.exports = {
-  name, db, ObjectId, users, invites, sessions, events,
+  name, db, ObjectId, users, invites, sessions, events, issues,
   connect, close: () => client.close(), forget,
   findSession, createSession, createInvite, findInvite, useInvite, logEvent,
 };

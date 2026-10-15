@@ -22,6 +22,8 @@ Ground-up rebuild, worked on in the `../rush-v2` worktree (branch `v2`). v1 stay
 - launch: migrate v1 data into `prod`, deploy v2 as a new revision of service `rush` (rush.rxtm.net); v1 revision kept for rollback only
 - login: phone + password. An admin makes a login link (team page, share sheet), the person sets a password in Safari, then signs in again inside the installed home-screen app (it has its own cookies) with Keychain autofill. db sessions in an HttpOnly cookie, 90 days sliding
 - first admin / any link from the command line: `node server.js invite <name> <phone> [crew] [manager] [admin]` (`--env-file=.env.prod` for prod)
+- nav: two rows of underlined tabs under the title, sections then that section's pages; urls `/<section>/<page>`, all listed in `NAV` (pages.js) and checked with `can()`. Sections so far: Account (Home: hero animation with RUSH POWERSPORTS / Resource Automation, intro, tour; Profile), Admin (Users, Sessions, Invites, Events). Everyone lands on Account → Home. Future: Service, Team, Issues, Shop
+- dev db test users: `dev admin`, `dev manager`, `dev crew` (405-555-0201/02/03, one role each). New login link: Admin → Users, or `node server.js invite "dev crew" 405-555-0203`. Throwaway test people use 405-555-01xx
 - `npm test` runs `*.test.js` with `node:test`
 - data: people as `{ userId, name }`, `tasks` (optionally on a job), append-only `events`; customers stay text
 - files: server.js (routes), db.js, more as needed (pages.js, app.css, app.js, qr.js); tests with `node:test`

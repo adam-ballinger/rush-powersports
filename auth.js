@@ -47,7 +47,7 @@ const showPhone = (d) => /^\d{10}$/.test(d) ? `${d.slice(0, 3)}-${d.slice(3, 6)}
 
 // the one place that says who can do what; an action not listed here is allowed to nobody
 const RULES = {
-  team: ['admin'],
+  admin: ['admin'],
 };
 const can = (user, action) => !!user && !user.disabledAt && (RULES[action] || []).some((r) => (user.roles || []).includes(r));
 

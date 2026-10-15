@@ -45,10 +45,10 @@ test('posts only from our own pages', () => {
   assert.equal(auth.sameOrigin(req('null')), false);
 });
 
-test('can: only admins manage the team; removed people can do nothing', () => {
-  assert.equal(auth.can({ roles: ['admin'] }, 'team'), true);
-  for (const roles of [[], ['crew'], ['manager']]) assert.equal(auth.can({ roles }, 'team'), false, roles.join());
-  assert.equal(auth.can({ roles: ['admin'], disabledAt: new Date() }, 'team'), false);
-  assert.equal(auth.can(null, 'team'), false);
+test('can: only admins reach the admin section; removed people can do nothing', () => {
+  assert.equal(auth.can({ roles: ['admin'] }, 'admin'), true);
+  for (const roles of [[], ['crew'], ['manager']]) assert.equal(auth.can({ roles }, 'admin'), false, roles.join());
+  assert.equal(auth.can({ roles: ['admin'], disabledAt: new Date() }, 'admin'), false);
+  assert.equal(auth.can(null, 'admin'), false);
   assert.equal(auth.can({ roles: ['admin'] }, 'not a real action'), false);
 });

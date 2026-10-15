@@ -54,19 +54,19 @@ async function invite(req, res, c, token, f) {
   html(res, pages.invited({ ...c, user }), 200, { 'Set-Cookie': auth.sessionCookie(req, session) });
 }
 
-async function team(req, res, c, f) {
+const ID = /^[0-9a-f]{24}$/;
+// user id -> name, for lists that only store ids
+const names = async () => {
+  const all = await db.users.find({}, { projection: { name: 1 } }).toArray(), m = new Map(all.map((u) => [String(u._id), u.name]));
+  return (id) => m.get(String(id)) || 'someone';
+};
+
+async function users(req, res, c, f) {
   const by = { userId: c.user._id, name: c.user.name };
   const show = async (link, msg, status = 200) => {
-    const [people, sessions, invites] = await Promise.all([
-      db.users.find().sort({ createdAt: 1 }).toArray(),
-      db.sessions.find({ expiresAt: { $gt: new Date() } }).sort({ seenAt: -1 }).toArray(),
-      db.invites.find({ expiresAt: { $gt: new Date() } }).toArray(),
-    ]);
-    for (const p of people) {
-      p.sessions = sessions.filter((s) => s.userId.equals(p._id)).map((s) => ({ ...s, current: s._id.equals(c.session._id) }));
-      p.invite = invites.find((i) => i.userId.equals(p._id));
-    }
-    html(res, pages.team({ ...c, msg }, people, link), status);
+    const [all, invites] = await Promise.all([db.users.find().sort({ createdAt: 1 }).toArray(), db.invites.find({ expiresAt: { $gt: new Date() } }).toArray()]);
+    for (const u of all) u.invite = invites.find((i) => i.userId.equals(u._id));
+    html(res, pages.users({ ...c, msg }, all, link), status);
   };
   if (!f) return show();
   const linkFor = async (user) => ({ name: user.name, url: `${c.origin}/invite/${await db.createInvite(user._id, by)}` });
@@ -77,27 +77,21 @@ async function team(req, res, c, f) {
     if (!name || !phone) return show(null, 'type a name and a 10 digit phone number.', 400);
     const user = { name, phone, roles: [], hash: null, fails: 0, lockedUntil: null, createdAt: new Date(), createdBy: by, disabledAt: null };
     try { user._id = (await db.users.insertOne(user)).insertedId; } catch (e) {
-      if (e.code === 11000) return show(null, `${auth.showPhone(phone)} is already on the team${(await db.users.findOne({ phone })).disabledAt ? ', under removed' : ''}.`, 409);
+      if (e.code === 11000) return show(null, `${auth.showPhone(phone)} is already a user${(await db.users.findOne({ phone })).disabledAt ? ', under removed' : ''}.`, 409);
       throw e;
     }
     await db.logEvent(by, 'invite', user._id);
     return show(await linkFor(user));
   }
-  if (op === 'revoke' && /^[0-9a-f]{24}$/.test(id)) {
-    const s = await db.sessions.findOneAndDelete({ _id: new db.ObjectId(id) });
-    if (s) await db.logEvent(by, 'revoke', s.userId, { device: s.device });
-    db.forget();
-    return go(res, '/team');
-  }
-  if (!/^[0-9a-f]{24}$/.test(id)) return go(res, '/team');
+  if (!ID.test(id)) return go(res, '/admin/users');
   const _id = new db.ObjectId(id), user = await db.users.findOne({ _id });
-  if (!user) return go(res, '/team');
+  if (!user) return go(res, '/admin/users');
   if (op === 'invite' && !user.disabledAt) {
     await db.logEvent(by, 'invite', _id);
     return show(await linkFor(user));
   }
   // everything below changes someone else, never yourself
-  if (_id.equals(c.user._id)) return go(res, '/team');
+  if (_id.equals(c.user._id)) return go(res, '/admin/users');
   if (op === 'role' && auth.ROLES.includes(role)) {
     await db.users.updateOne({ _id }, on === '1' ? { $addToSet: { roles: role } } : { $pull: { roles: role } });
     await db.logEvent(by, 'roles', _id, { role, on: on === '1' });
@@ -112,7 +106,111 @@ async function team(req, res, c, f) {
     await db.logEvent(by, 'restore', _id);
   }
   db.forget();
-  go(res, '/team');
+  go(res, '/admin/users');
+}
+
+// every signed-in phone; × signs it out (yours can't be, use sign out)
+async function sessions(req, res, c, f) {
+  const [op, id] = f ? (f.get('a') || '').split(':') : [];
+  if (op === 'revoke' && ID.test(id) && id !== String(c.session._id)) {
+    const s = await db.sessions.findOneAndDelete({ _id: new db.ObjectId(id) });
+    if (s) await db.logEvent({ userId: c.user._id, name: c.user.name }, 'revoke', s.userId, { device: s.device });
+    db.forget();
+  }
+  if (f) return go(res, '/admin/sessions');
+  const [all, who] = await Promise.all([db.sessions.find({ expiresAt: { $gt: new Date() } }).sort({ seenAt: -1 }).toArray(), names()]);
+  html(res, pages.sessions(c, all, who));
+}
+
+// one session's fields (not its token hash)
+async function session(res, c, id) {
+  const s = ID.test(id) && await db.sessions.findOne({ _id: new db.ObjectId(id) });
+  if (!s) return go(res, '/admin/sessions');
+  const who = await names();
+  html(res, pages.session(c, s, who(s.userId)));
+}
+
+// anyone adds an issue; admins mark them done or reopen them
+async function issues(req, res, c, f) {
+  const [op, id] = f ? (f.get('a') || '').split(':') : [];
+  const text = f && (f.get('text') || '').trim().slice(0, 500);
+  if (op === 'add' && !text) return html(res, pages.issues({ ...c, msg: 'type something.' }, await db.issues.find().sort({ at: -1 }).toArray()), 400);
+  if (op === 'add') await db.issues.insertOne({ text, by: { userId: c.user._id, name: c.user.name }, at: new Date(), doneAt: null });
+  if ((op === 'done' || op === 'reopen') && ID.test(id) && auth.can(c.user, 'admin')) {
+    await db.issues.updateOne({ _id: new db.ObjectId(id) }, { $set: { doneAt: op === 'done' ? new Date() : null } });
+  }
+  if (f) return go(res, '/account/issues');
+  html(res, pages.issues(c, await db.issues.find().sort({ at: -1 }).toArray()));
+}
+
+// one issue. writer or admin: save, delete. admin: done, reopen
+async function issue(res, c, id, f) {
+  const i = ID.test(id) && await db.issues.findOne({ _id: new db.ObjectId(id) });
+  if (!i) return go(res, '/account/issues');
+  const admin = auth.can(c.user, 'admin'), mine = String(i.by.userId) === String(c.user._id), a = f && f.get('a');
+  const set = (x) => db.issues.updateOne({ _id: i._id }, { $set: x });
+  if (a === 'save' && (mine || admin)) {
+    const text = (f.get('text') || '').trim().slice(0, 500);
+    if (!text) return html(res, pages.issue({ ...c, msg: 'type something.' }, i), 400);
+    await set({ text });
+  }
+  if (a === 'delete' && (mine || admin)) { await db.issues.deleteOne({ _id: i._id }); return go(res, '/account/issues'); }
+  if ((a === 'done' || a === 'reopen') && admin) await set({ doneAt: a === 'done' ? new Date() : null });
+  if (f) return go(res, '/account/issues/' + id);
+  html(res, pages.issue(c, i));
+}
+
+// login links not used yet; × cancels one so it stops working
+async function invites(req, res, c, f) {
+  const [op, id] = f ? (f.get('a') || '').split(':') : [];
+  if (op === 'cancel' && ID.test(id)) {
+    const i = await db.invites.findOneAndDelete({ _id: new db.ObjectId(id) });
+    if (i) await db.logEvent({ userId: c.user._id, name: c.user.name }, 'cancel', i.userId);
+  }
+  if (f) return go(res, '/admin/invites');
+  const [all, who] = await Promise.all([db.invites.find({ expiresAt: { $gt: new Date() } }).sort({ expiresAt: -1 }).toArray(), names()]);
+  html(res, pages.invites(c, all, who));
+}
+
+// your own name, phone and password. the page comes back with a message under the form you used
+async function profile(req, res, c, f) {
+  if (!f) return html(res, pages.profile(c));
+  const me = c.user, by = { userId: me._id, name: me.name }, a = f.get('a');
+  const done = async (text, ok = true, status = 200) => {
+    db.forget();
+    html(res, pages.profile({ ...c, user: await db.users.findOne({ _id: me._id }), msg: [a, text, ok] }), status);
+  };
+  if (a === 'name') {
+    const name = (f.get('name') || '').trim().slice(0, 40);
+    if (!name) return done('type a name.', false, 400);
+    if (name === me.name) return done('saved.');
+    await db.users.updateOne({ _id: me._id }, { $set: { name } });
+    await db.logEvent({ ...by, name }, 'name', me._id, { from: me.name, to: name });
+    return done('saved.');
+  }
+  if (a !== 'phone' && a !== 'password') return go(res, '/account/profile');
+  if (!await auth.checkPassword(f.get('current') || '', me.hash)) return done('your current password is wrong.', false, 401);
+  if (a === 'phone') {
+    const phone = auth.phone(f.get('phone'));
+    if (!phone) return done('type a 10 digit phone number.', false, 400);
+    try { await db.users.updateOne({ _id: me._id }, { $set: { phone } }); } catch (e) {
+      if (e.code === 11000) return done(`${auth.showPhone(phone)} belongs to someone else.`, false, 409);
+      throw e;
+    }
+    await db.logEvent(by, 'phone', me._id);
+    return done(`saved. sign in with ${auth.showPhone(phone)} from now on.`);
+  }
+  const password = f.get('password') || '';
+  if (password.length < 8 || password.length > 200) return done('use 8 or more characters.', false, 400);
+  await db.users.updateOne({ _id: me._id }, { $set: { hash: await auth.hashPassword(password) } });
+  const out = await db.sessions.deleteMany({ userId: me._id, _id: { $ne: c.session._id } });
+  await db.logEvent(by, 'password change', me._id);
+  done(`saved.${out.deletedCount ? ` signed out ${out.deletedCount} other phone${out.deletedCount > 1 ? 's' : ''}.` : ''}`);
+}
+
+async function events(res, c) {
+  const [all, who] = await Promise.all([db.events.find().sort({ at: -1 }).limit(100).toArray(), names()]);
+  html(res, pages.events(c, all, who));
 }
 
 async function serve() {
@@ -132,7 +230,7 @@ async function serve() {
       if (req.method === 'POST' && !f) return res.writeHead(413).end();
       const token = auth.cookie(req, 's'), me = token && await db.findSession(token);
       const c = { t0, origin: `${req.headers['x-forwarded-proto'] || 'http'}://${req.headers.host}`, ...me };
-      const [, route, arg] = url.pathname.split('/');
+      const [, route, arg, sub] = url.pathname.split('/');
 
       if (route === 'invite' && arg) return await invite(req, res, c, arg, f);
       if (route === 'login') return me ? go(res, '/') : f ? await login(req, res, c, f) : html(res, pages.login(c));
@@ -143,8 +241,20 @@ async function serve() {
       }
       if (!me) return go(res, '/login', token ? { 'Set-Cookie': auth.sessionCookie(req, '') } : {});
 
-      if (route === '' && !f) return html(res, pages.home(c));
-      if (route === 'team' && auth.can(c.user, 'team')) return await team(req, res, c, f);
+      // / and /<section> land on the first page you can use. pages are /<section>/<page>, each checked with can()
+      if (route === '') return go(res, pages.landing(c.user));
+      if (!arg && pages.landing(c.user, route)) return go(res, pages.landing(c.user, route));
+      if (route === 'account' && arg === 'home' && !f) return html(res, pages.home(c));
+      if (route === 'account' && arg === 'issues' && sub) return await issue(res, c, sub, f);
+      if (route === 'account' && arg === 'issues') return await issues(req, res, c, f);
+      if (route === 'account' && arg === 'profile') return await profile(req, res, c, f);
+      if (route === 'admin' && auth.can(c.user, 'admin')) {
+        if (arg === 'users') return await users(req, res, c, f);
+        if (arg === 'sessions' && sub && !f) return await session(res, c, sub);
+        if (arg === 'sessions') return await sessions(req, res, c, f);
+        if (arg === 'invites') return await invites(req, res, c, f);
+        if (arg === 'events' && !f) return await events(res, c);
+      }
       res.writeHead(404).end();
     } catch (e) {
       console.error(e);
