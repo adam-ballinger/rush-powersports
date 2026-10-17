@@ -4,6 +4,7 @@ const http = require('http');
 const db = require('./db');
 const auth = require('./auth');
 const pages = require('./pages');
+const api = require('./api');
 const qr = require('./qr');
 
 const ORIGIN = { dev: 'https://dev.rush.rxtm.net', prod: 'https://rush.rxtm.net' }[db.name] || `http://localhost:${process.env.PORT || 3000}`;
@@ -177,34 +178,43 @@ async function session(res, c, id) {
   html(res, pages.session(c, s, who(s.userId)));
 }
 
-// anyone adds an issue; admins mark them done or reopen them
-async function issues(req, res, c, f) {
+// your own issues (everyone: all of them, on the admin page); anyone adds one, admins mark them done or reopen them
+async function issues(req, res, c, f, everyone) {
   const [op, id] = f ? (f.get('a') || '').split(':') : [];
   const text = f && (f.get('text') || '').trim().slice(0, 500);
-  if (op === 'add' && !text) return html(res, pages.issues({ ...c, msg: 'type something.' }, await db.issues.find().sort({ at: -1 }).toArray()), 400);
+  const list = () => db.issues.find(everyone ? {} : { 'by.userId': c.user._id }).sort({ at: -1 }).toArray();
+  if (op === 'add' && !text) return html(res, pages.issues({ ...c, msg: 'type something.' }, await list(), everyone), 400);
   if (op === 'add') await db.issues.insertOne({ text, by: { userId: c.user._id, name: c.user.name }, at: new Date(), doneAt: null });
   if ((op === 'done' || op === 'reopen') && ID.test(id) && auth.can(c.user, 'admin')) {
     await db.issues.updateOne({ _id: new db.ObjectId(id) }, { $set: { doneAt: op === 'done' ? new Date() : null } });
   }
-  if (f) return go(res, '/account/issues');
-  html(res, pages.issues(c, await db.issues.find().sort({ at: -1 }).toArray()));
+  if (f) return go(res, everyone ? '/admin/issues' : '/account/issues');
+  const all = await list();
+  if (!everyone) return html(res, pages.issues(c, all));
+  // completed per day, and how many were open at 5pm Chicago each day (opened by then, not yet closed; a reopened issue counts as never closed)
+  const keys = chicagoDays(), five = (k) => [22, 23].map((h) => new Date(`${k}T${h}:00:00Z`)).find((d) => +d.toLocaleString('en-US', { timeZone: 'America/Chicago', hour: 'numeric', hour12: false }) % 24 === 17);
+  const closed = (k) => all.filter((i) => i.doneAt && chicagoDay(i.doneAt) === k).length;
+  const open = (k) => { const t = five(k); return all.filter((i) => i.at <= t && !(i.doneAt && i.doneAt <= t)).length; };
+  html(res, pages.issues(c, all, true, { done: keys.map((k) => [k, closed(k)]), open: keys.map((k) => [k, open(k)]) }));
 }
 
-// one issue. writer or admin: save, delete. admin: done, reopen
-async function issue(res, c, id, f) {
+// one issue, on its own route for you (account) and for admins (admin, everyone's). writer or admin: save, delete. admin: done, reopen
+async function issue(res, c, id, f, everyone) {
+  const base = everyone ? '/admin/issues' : '/account/issues';
   const i = ID.test(id) && await db.issues.findOne({ _id: new db.ObjectId(id) });
-  if (!i) return go(res, '/account/issues');
+  if (!i) return go(res, base);
   const admin = auth.can(c.user, 'admin'), mine = String(i.by.userId) === String(c.user._id), a = f && f.get('a');
+  if (!everyone && !mine) return go(res, base); // the admin route is for other people's issues
   const set = (x) => db.issues.updateOne({ _id: i._id }, { $set: x });
   if (a === 'save' && (mine || admin)) {
     const text = (f.get('text') || '').trim().slice(0, 500);
-    if (!text) return html(res, pages.issue({ ...c, msg: 'type something.' }, i), 400);
+    if (!text) return html(res, pages.issue({ ...c, msg: 'type something.' }, i, everyone), 400);
     await set({ text });
   }
-  if (a === 'delete' && (mine || admin)) { await db.issues.deleteOne({ _id: i._id }); return go(res, '/account/issues'); }
+  if (a === 'delete' && (mine || admin)) { await db.issues.deleteOne({ _id: i._id }); return go(res, base); }
   if ((a === 'done' || a === 'reopen') && admin) await set({ doneAt: a === 'done' ? new Date() : null });
-  if (f) return go(res, '/account/issues/' + id);
-  html(res, pages.issue(c, i));
+  if (f) return go(res, `${base}/${id}`);
+  html(res, pages.issue(c, i, everyone));
 }
 
 // your own signed-in phones; × signs one out (this one can't be, use sign out)
@@ -267,9 +277,12 @@ async function profile(req, res, c, f) {
   done(`saved.${out.deletedCount ? ` signed out ${out.deletedCount} other phone${out.deletedCount > 1 ? 's' : ''}.` : ''}`);
 }
 
+// the last n days as YYYY-MM-DD in Chicago, today last, for charts
+const chicagoDay = (d) => d.toLocaleDateString('en-CA', { timeZone: 'America/Chicago' });
+const chicagoDays = (n = 30) => { const base = Date.parse(chicagoDay(new Date())); return [...Array(n)].map((_, i) => new Date(base - (n - 1 - i) * 864e5).toISOString().slice(0, 10)); };
+
 async function events(res, c) {
-  // events per day for the last 30 days (Chicago days, today last), zeros included
-  const base = Date.parse(new Date().toLocaleDateString('en-CA', { timeZone: 'America/Chicago' }));
+  const keys = chicagoDays(), base = Date.parse(keys[29]);
   const [all, who, perDay] = await Promise.all([
     db.events.find().sort({ at: -1 }).limit(100).toArray(), names(),
     db.events.aggregate([
@@ -278,7 +291,7 @@ async function events(res, c) {
     ]).toArray(),
   ]);
   const n = new Map(perDay.map((d) => [d._id, d.n]));
-  const days = [...Array(30)].map((_, i) => { const k = new Date(base - (29 - i) * 864e5).toISOString().slice(0, 10); return [k, n.get(k) || 0]; });
+  const days = keys.map((k) => [k, n.get(k) || 0]);
   html(res, pages.events(c, all, who, days));
 }
 
@@ -294,6 +307,7 @@ async function serve() {
       if (/^\/(icon\.png|favicon\.ico|apple-touch-icon[\w-]*\.png)$/.test(url.pathname)) return res.writeHead(200, { 'Content-Type': 'image/png', ...keep }).end(pages.icon);
       if (url.pathname === '/manifest.json') return res.writeHead(200, { 'Content-Type': 'application/manifest+json', ...keep }).end(pages.manifest);
 
+      if (url.pathname.startsWith('/api/')) return await api(req, res, url); // bearer key, no cookies, so no same-origin check
       if (req.method === 'POST' && !auth.sameOrigin(req)) return res.writeHead(403).end();
       const f = req.method === 'POST' ? await form(req) : null;
       if (req.method === 'POST' && !f) return res.writeHead(413).end();
@@ -323,6 +337,8 @@ async function serve() {
         if (arg === 'users') return await users(req, res, c, f);
         if (arg === 'sessions' && sub && !f) return await session(res, c, sub);
         if (arg === 'sessions') return await sessions(req, res, c, f);
+        if (arg === 'issues' && sub) return await issue(res, c, sub, f, true);
+        if (arg === 'issues') return await issues(req, res, c, f, true);
         if (arg === 'invites') return await invites(req, res, c, f);
         if (arg === 'events' && !f) return await events(res, c);
       }

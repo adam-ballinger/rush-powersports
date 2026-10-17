@@ -3,6 +3,7 @@ const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 const { ROLES, showPhone, can } = require('./auth');
+const qr = require('./qr');
 
 const REV = process.env.K_REVISION || 'local';
 
@@ -84,10 +85,13 @@ footer b{color:var(--fg);font-weight:normal}
 .hero .m{color:#ff3fb4;text-shadow:0 0 .6em #ff3fb4}.hero .y{color:#f2b705;text-shadow:0 0 .6em #f2b705}.hero .c{color:#12b5c4;text-shadow:0 0 .6em #12b5c4}
 .hero .d{color:#6a6a6a}.hero .dd{color:#333}.hero .tf{color:#3a3a3a}.hero .g{color:#b5b2aa;text-shadow:0 0 .4em rgba(246,244,239,.3)}
 .hero .t{color:#f6f4ef;text-shadow:0 0 .5em rgba(246,244,239,.5)}
+.invite{margin-bottom:var(--s4)}
+.qr{display:block;width:176px;height:176px;border:1px solid var(--line);border-radius:4px}
 /* charts: every color is a role on .chart, so a chart is recolored in one place. its own scheme (the dataviz palette's dark steps)
    apart from the app's cyan, on a dark panel so charts read as their own surface; marks wear --series, text only wears the inks. small system sans, not the mono the rest of the app uses */
 .chart{color-scheme:dark;--surface:#1a1a19;--ink:#f0efec;--ink2:#c3c2b7;--muted:#898781;--grid:#2c2c2a;--axis:#383835;--series:#3987e5;--tip:#f0efec;--on-tip:#1a1a19;
   margin:0 0 var(--s4);background:var(--surface);border-color:rgba(255,255,255,.10);font:12px/1.4 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;color:var(--ink2)}
+* + .chart{margin-top:var(--s4)}
 .chart figcaption{margin-bottom:var(--s4);display:flex;flex-wrap:wrap;gap:0 var(--s2);align-items:baseline}
 .chart figcaption b{font-size:13px;font-weight:600;color:var(--ink)}
 .chart figcaption span{color:var(--muted)}
@@ -189,7 +193,8 @@ function browser() {
       document.execCommand('copy');
       t.remove();
     }
-    b.textContent = '✓ copied';
+    // an icon button flashes a check and goes back; the login link's text button stays copied
+    if (b.hasAttribute('data-icon')) { b.textContent = '✓'; setTimeout(() => { b.textContent = '⧉'; }, 1500); } else b.textContent = '✓ copied';
   });
 }
 
@@ -204,7 +209,7 @@ const tabIcon = `data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://www
 const NAV = [
   { id: 'account', label: 'Account', pages: [{ id: 'home', label: 'Home' }, { id: 'issues', label: 'Issues' }, { id: 'sessions', label: 'Sessions' }, { id: 'profile', label: 'Profile' }] },
   { id: 'admin', label: 'Admin', can: 'admin', pages: [
-    { id: 'users', label: 'Users' }, { id: 'sessions', label: 'Sessions' }, { id: 'invites', label: 'Invites' }, { id: 'events', label: 'Events' }] },
+    { id: 'users', label: 'Users' }, { id: 'issues', label: 'Issues' }, { id: 'sessions', label: 'Sessions' }, { id: 'invites', label: 'Invites' }, { id: 'events', label: 'Events' }] },
 ];
 const sections = (user) => NAV.filter((s) => !s.can || can(user, s.can)).map((s) => ({ ...s, pages: s.pages.filter((p) => !p.can || can(user, p.can)) }));
 // where / and /<section> land: the first page someone can use
@@ -302,8 +307,15 @@ ${row('password', 'Password', '••••••••', `<input name="username
 };
 
 // shown once, right after it's made: only its hash is kept, so it can't be shown again later
-const inviteBox = (link) => `<h2>Login link for ${esc(link.name)}</h2><div class="card">
-<p>send this to ${esc(link.name)}. it works once, for 7 days.</p>
+// black modules on white with 4 modules of quiet zone, whatever the page colors, so a phone camera reads it
+const qrSvg = (text) => {
+  const m = qr.matrix(text), n = m.length;
+  const d = m.flatMap((row, r) => row.map((v, c) => v === 1 ? `M${c} ${r}h1v1h-1z` : '')).join('');
+  return `<svg class="qr" viewBox="-4 -4 ${n + 8} ${n + 8}" role="img" aria-label="QR code of the login link" shape-rendering="crispEdges"><rect x="-4" y="-4" width="${n + 8}" height="${n + 8}" fill="#fff"/><path d="${d}" fill="#000"/></svg>`;
+};
+const inviteBox = (link) => `<h2>Login link for ${esc(link.name)}</h2><div class="card invite">
+<p>send this to ${esc(link.name)}, or have them scan this with their phone camera. it works once, for 7 days.</p>
+${qrSvg(link.url)}
 <p class="dim">${esc(link.url)}</p>
 <div class="row"><button type="button" data-share="${esc(link.url)}" data-text="${esc(`${link.name}, here's your Rush Powersports login link. It works once, for 7 days.`)}" hidden>↗ share</button><button type="button" data-copy="${esc(link.url)}">⧉ copy</button></div></div>`;
 
@@ -371,28 +383,31 @@ const sessions = (c, all, who) => page({ ...c, at: 'admin/sessions' }, 'Sessions
 const session = (c, s, name) => {
   const { hash, ...rest } = s, rows = { ...rest, user: name };
   return page({ ...c, at: 'admin/sessions' }, 'Session', `<div class="card"><ul>${Object.entries(rows).map(([k, v]) => `<li><span>${esc(k)}</span><span class="dim">${esc(v instanceof Date ? v.toISOString() : String(v))}</span></li>`).join('')}</ul></div>
+${String(s._id) === String(c.session._id) ? '<p class="dim">this is your phone: use sign out.</p>' : `<form method="post" action="/admin/sessions"><div class="row"><button name="a" value="revoke:${s._id}">× sign out this phone</button></div></form>`}
 <p><a href="/admin/sessions">← sessions</a></p>`);
 };
 
-// Account → Issues: anyone writes a problem or idea; admins tick them off (a done one can be reopened)
-const issues = (c, all) => {
-  const admin = can(c.user, 'admin'), row = (i) => `<li><span><a href="/account/issues/${i._id}">${esc(i.text.length > 80 ? i.text.slice(0, 80) + '…' : i.text)}</a> <span class="dim">${esc(i.by.name)} · ${ago(i.at)}${i.doneAt ? ` · done ${ago(i.doneAt)}` : ''}</span></span>${admin ? `<button class="tag dim" name="a" value="${i.doneAt ? 'reopen' : 'done'}:${i._id}">${i.doneAt ? '↺' : '✓'}</button>` : ''}</li>`;
+// Account → Issues (yours) and Admin → Issues (everyone's): anyone writes a problem or idea; admins tick them off (a done one can be reopened)
+const issues = (c, all, everyone, charts) => {
+  const base = everyone ? '/admin/issues' : '/account/issues', admin = can(c.user, 'admin'), row = (i) => `<li><span><a href="${base}/${i._id}">${esc(i.text.length > 80 ? i.text.slice(0, 80) + '…' : i.text)}</a> <span class="dim">${esc(i.by.name)} · ${ago(i.at)}${i.doneAt ? ` · done ${ago(i.doneAt)}` : ''}</span></span>${everyone ? `<button type="button" class="tag dim" data-copy="${esc(i.text)}" data-icon aria-label="copy issue text">⧉</button>` : ''}${admin ? `<button class="tag dim" name="a" value="${i.doneAt ? 'reopen' : 'done'}:${i._id}">${i.doneAt ? '↺' : '✓'}</button>` : ''}</li>`;
   const open = all.filter((i) => !i.doneAt), done = all.filter((i) => i.doneAt);
-  return page({ ...c, at: 'account/issues' }, 'Issues', `${error(c.msg)}<form method="post" action="/account/issues">
+  return page({ ...c, at: everyone ? 'admin/issues' : 'account/issues' }, 'Issues', `${error(c.msg)}<form method="post" action="${base}">
 <label>what's wrong, or what would help?<textarea name="text" maxlength="500" rows="3" required></textarea></label>
 <div class="row"><button name="a" value="add">+ add issue</button></div></form>
-<h2>Open</h2><form method="post" action="/account/issues" class="card"><ul>${open.map(row).join('') || '<li class="dim">nothing open</li>'}</ul></form>
-${done.length ? `<h2>Done</h2><form method="post" action="/account/issues" class="card"><ul>${done.map(row).join('')}</ul></form>` : ''}`);
+<h2>Open</h2><form method="post" action="${base}" class="card"><ul>${open.map(row).join('') || '<li class="dim">nothing open</li>'}</ul></form>
+${charts ? `${columnChart({ title: 'Issues completed per day', unit: 'completed', sub: `last 30 days · ${total(charts.done)} total`, rows: dayRows(charts.done) })}
+${columnChart({ title: 'Open issues at 5pm', unit: 'open', sub: `last 30 days · ${open.length} now`, rows: dayRows(charts.open) })}` : ''}
+${done.length ? `<h2>Done</h2><form method="post" action="${base}" class="card"><ul>${done.map(row).join('')}</ul></form>` : ''}`);
 };
 
 // one issue: its writer or an admin can change the text or delete it; admins also mark it done
-const issue = (c, i) => {
-  const admin = can(c.user, 'admin'), mine = String(i.by.userId) === String(c.user._id), url = '/account/issues/' + i._id;
-  return page({ ...c, at: 'account/issues' }, 'Issue', `${error(c.msg)}<div class="card"><p>${esc(i.text)}</p>
+const issue = (c, i, everyone) => {
+  const base = everyone ? '/admin/issues' : '/account/issues', admin = can(c.user, 'admin'), mine = String(i.by.userId) === String(c.user._id), url = `${base}/${i._id}`;
+  return page({ ...c, at: everyone ? 'admin/issues' : 'account/issues' }, 'Issue', `${error(c.msg)}<div class="card"><p>${esc(i.text)}</p>
 <p class="dim">${esc(i.by.name)} · ${ago(i.at)}${i.doneAt ? ` · done ${ago(i.doneAt)}` : ' · open'}</p></div>
 ${mine || admin ? `<form method="post" action="${url}"><label>text<textarea name="text" maxlength="500" rows="4" required>${esc(i.text)}</textarea></label>
-<div class="row"><button name="a" value="save">↵ save</button>${admin ? `<button name="a" value="${i.doneAt ? 'reopen' : 'done'}">${i.doneAt ? '↺ reopen' : '✓ done'}</button>` : ''}<button name="a" value="delete">× delete</button></div></form>` : ''}
-<p><a href="/account/issues">← issues</a></p>`);
+<div class="row"><button name="a" value="save">↵ save</button>${everyone ? `<button type="button" data-copy="${esc(i.text)}">⧉ copy</button>` : ''}${admin ? `<button name="a" value="${i.doneAt ? 'reopen' : 'done'}">${i.doneAt ? '↺ reopen' : '✓ done'}</button>` : ''}<button name="a" value="delete">× delete</button></div></form>` : ''}
+<p><a href="${base}">← issues</a></p>`);
 };
 
 // login links not used yet; × makes one stop working
@@ -419,17 +434,18 @@ const said = (e, who) => {
     unlock: `${by} unlocked ${them}`,
     delete: `${by} deleted ${esc(e.name)} for good`,
     'password change': `${them} changed their password`,
+    issue: `${by} ${e.done === true ? 'completed' : e.done === false ? 'reopened' : 'edited'} an issue`,
   }[e.what] || `${by}: ${esc(e.what)}`;
 };
 // a column chart, the template for the other charts. rows is [[label, value, tooltip date]], oldest first; the title names the
 // single series, so there's no legend. thin columns (24px at most) with a rounded top and a 2px gap, hairline grid, y ticks at
 // clean numbers, the peak labeled on its cap, a hover/focus tooltip on each column (its whole height is the target), a table view
-// for the same numbers, and a label every 7th column
-const columnChart = ({ title, sub, unit, rows }) => {
+// for the same numbers, and a date label every 4th column (the `every` option)
+const columnChart = ({ title, sub, unit, rows, every = 4 }) => {
   const max = Math.max(...rows.map((r) => r[1]), 0);
   let top = 2; // 2, 4, 10, 20, 40, 100, ...: a clean top with a clean middle
   for (let p = 1; top < max; p *= 10) top = [2, 4, 10].map((s) => s * p).find((s) => s >= max) || top;
-  const peak = rows.findIndex((r) => r[1] === max && max > 0), last = rows.length - 1, cell = (i) => (last - i) % 7 === 0;
+  const peak = rows.findIndex((r) => r[1] === max && max > 0), last = rows.length - 1, cell = (i) => (last - i) % every === 0;
   const grid = [[0, 'base'], [top / 2, ''], [top, '']].map(([v, cls]) => `<div class="grid ${cls}" style="bottom:${v / top * 100}%"><span>${v}</span></div>`).join('');
   const cols = rows.map(([label, v, date], i) => `<div class="col${i < 4 ? ' l' : i > last - 4 ? ' r' : ''}" tabindex="0" style="--h:${v / top * 100}%"><i${v ? '' : ' hidden'}>${i === peak ? `<b>${v}</b>` : ''}</i><span class="tip"><b>${v}</b> <span>${esc(unit)} · ${esc(date)}</span></span></div>`).join('');
   const xs = rows.map(([label], i) => `<span>${cell(i) ? `<b>${esc(label)}</b>` : ''}</span>`).join('');
@@ -438,11 +454,12 @@ const columnChart = ({ title, sub, unit, rows }) => {
 <details><summary>table</summary><ul>${rows.slice().reverse().map(([, v, date]) => `<li><span>${esc(date)}</span><span>${v}</span></li>`).join('')}</ul></details></figure>`;
 };
 
+// [[YYYY-MM-DD, n]] to chart rows: axis label, value, tooltip date
+const dayRows = (days) => days.map(([k, n]) => { const d = new Date(k + 'T12:00Z'); return [d.toLocaleDateString('en-US', { timeZone: 'UTC', month: 'numeric', day: 'numeric' }), n, d.toLocaleDateString('en-US', { timeZone: 'UTC', weekday: 'short', month: 'numeric', day: 'numeric' })]; });
+const total = (days) => days.reduce((a, d) => a + d[1], 0);
+
 const events = (c, all, who, days) => page({ ...c, at: 'admin/events' }, 'Events', `
-${columnChart({
-  title: 'Events per day', unit: 'events', sub: `last 30 days · ${days.reduce((a, d) => a + d[1], 0)} total`,
-  rows: days.map(([k, n]) => { const d = new Date(k + 'T12:00Z'); return [d.toLocaleDateString('en-US', { timeZone: 'UTC', month: 'numeric', day: 'numeric' }), n, d.toLocaleDateString('en-US', { timeZone: 'UTC', weekday: 'short', month: 'numeric', day: 'numeric' })]; }),
-})}
+${columnChart({ title: 'Events per day', unit: 'events', sub: `last 30 days · ${total(days)} total`, rows: dayRows(days) })}
 <div class="card"><ul>${all.map((e) => `<li><span>${said(e, who)}</span><time class="dim">${ago(e.at)}</time></li>`).join('') || '<li class="dim">nothing yet</li>'}</ul></div>
 ${all.length === 100 ? '<p class="dim">the last 100.</p>' : ''}`);
 
