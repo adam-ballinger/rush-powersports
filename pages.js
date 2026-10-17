@@ -10,12 +10,12 @@ const REV = process.env.K_REVISION || 'local';
 // anything but prod gets the dark DEV icon and "Rush (dev)" name, so a home screen can hold both without mixing them up.
 // the name shows under the home screen icon and in the tab
 const live = process.env.MONGODB_DB === 'prod';
-const APP = live ? 'Rush' : 'Rush (dev)';
+const APP = live ? 'Rush V2' : 'Rush V2 (dev)';
 // links carry a fingerprint of the file, so a phone that kept an old icon or manifest fetches the new one
 const v = (b) => crypto.createHash('sha256').update(b).digest('hex').slice(0, 8);
 const icon = fs.readFileSync(path.join(__dirname, live ? 'icon-bars.png' : 'icon-dev.png'));
 const iconUrl = `/icon.png?v=${v(icon)}`;
-const manifest = JSON.stringify({ ...require('./manifest.json'), name: live ? 'Rush Powersports' : 'Rush Powersports (dev)', short_name: APP, icons: [{ src: iconUrl, sizes: '180x180', type: 'image/png' }] });
+const manifest = JSON.stringify({ ...require('./manifest.json'), name: live ? 'Rush Powersports V2' : 'Rush Powersports V2 (dev)', short_name: APP, icons: [{ src: iconUrl, sizes: '180x180', type: 'image/png' }] });
 const manifestUrl = `/manifest.json?v=${v(manifest)}`;
 
 const css = `
@@ -207,9 +207,9 @@ const tabIcon = `data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://www
 // sections, each with its pages; urls are /<section>/<page>. can() hides what someone can't use (no can: everyone),
 // so adding a page is one line here plus its route in server.js
 const NAV = [
-  { id: 'account', label: 'Account', pages: [{ id: 'home', label: 'Home' }, { id: 'issues', label: 'Issues' }, { id: 'sessions', label: 'Sessions' }, { id: 'profile', label: 'Profile' }] },
+  { id: 'account', label: 'Account', pages: [{ id: 'home', label: 'Home' }, { id: 'profile', label: 'Profile' }, { id: 'issues', label: 'Issues' }, { id: 'sessions', label: 'Sessions' }] },
   { id: 'admin', label: 'Admin', can: 'admin', pages: [
-    { id: 'users', label: 'Users' }, { id: 'issues', label: 'Issues' }, { id: 'sessions', label: 'Sessions' }, { id: 'invites', label: 'Invites' }, { id: 'events', label: 'Events' }] },
+    { id: 'issues', label: 'Issues' }, { id: 'users', label: 'Users' }, { id: 'sessions', label: 'Sessions' }, { id: 'invites', label: 'Invites' }, { id: 'events', label: 'Events' }] },
 ];
 const sections = (user) => NAV.filter((s) => !s.can || can(user, s.can)).map((s) => ({ ...s, pages: s.pages.filter((p) => !p.can || can(user, p.can)) }));
 // where / and /<section> land: the first page someone can use
@@ -233,7 +233,7 @@ const page = (c, title, body) => {
 <meta name="referrer" content="same-origin"><meta name="theme-color" content="#f6f4ef"><meta name="apple-mobile-web-app-title" content="${APP}">
 <title>${esc(title)} · ${APP}</title>
 <link rel="manifest" href="${manifestUrl}"><link rel="apple-touch-icon" href="${iconUrl}"><link rel="icon" href="${tabIcon}">
-<style>${css}</style><main><h1>Rush Powersports</h1>${b}
+<style>${css}</style><main><h1>Rush Powersports V2</h1>${b}
 ${body}
 <footer><div>${logo} <b>By Resource Automation</b></div>
 <div>${c.user ? `user ${esc(c.user.name)} · ` : ''}db ${esc(process.env.MONGODB_DB)} · server ${Date.now() - c.t0}ms · rev ${esc(REV)}</div>
